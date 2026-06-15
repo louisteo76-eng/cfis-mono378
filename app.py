@@ -5571,6 +5571,17 @@ FULL_UNIVERSE = [
     "SE","BABA","BIDU","JD","PDD",
     # ── Quantum & Frontier ──
     "RGTI","QUBT",
+    # ── Underdogs & Below Radar — Small/Mid Cap with Potential ──
+    "AEHR","GSAT","IREN","CORZ","WULF","BTDR","HUT","CIFR",  # AI/Crypto infra
+    "ACHR","JOBY","LILM","EVTL",  # eVTOL / Air mobility
+    "PSNY","RIVN","LCID","GOEV",  # EV underdogs
+    "DNA","ARKG","BEAM","NTLA","EDIT",  # Genomics / Gene editing
+    "SOFI","UPST","AFRM","NU",  # Fintech underdogs
+    "RBOT","SERV","ORGN",  # Robotics / DeepTech
+    "IQ","FUTU","TIGR",  # China tech underdogs
+    "U","RBLX","MTTR",  # Metaverse / Gaming
+    "SOUN","BBAI","AI",  # AI small-caps
+    "APLD","CLSK",  # Data center / Mining
 ]
 
 
@@ -8199,6 +8210,70 @@ elif page == "6️⃣ Hunter Command by Louis Teo":
     </div>
     """, unsafe_allow_html=True)
 
+    with st.expander("📖 HOW TO READ THE SCORES — Interpretation Guide", expanded=False):
+        st.markdown("""
+        <div style="background:#0d1117;border-radius:12px;padding:20px;line-height:2.0">
+            <div style="display:flex;gap:20px;flex-wrap:wrap">
+                <div style="flex:1;min-width:280px">
+                    <div style="font-size:13px;font-weight:800;color:#06b6d4;margin-bottom:8px">📊 HUNTER SCORE (Master Score)</div>
+                    <div style="font-size:12px;color:#c9d1d9">
+                        The composite score. Answers: <em>"Will capital flow into this stock?"</em><br>
+                        <span style="color:#00E676">90+</span> = High conviction &nbsp;|&nbsp;
+                        <span style="color:#4CAF50">80-89</span> = Watch closely &nbsp;|&nbsp;
+                        <span style="color:#FFC107">60-79</span> = Average &nbsp;|&nbsp;
+                        <span style="color:#78909C">&lt;60</span> = Weak
+                    </div>
+                </div>
+                <div style="flex:1;min-width:280px">
+                    <div style="font-size:13px;font-weight:800;color:#AB47BC;margin-bottom:8px">🎯 CONVICTION (Signal Confidence)</div>
+                    <div style="font-size:12px;color:#c9d1d9">
+                        <em>"How confident is the data behind the Hunter score?"</em><br>
+                        High Hunter + Low Conviction = <span style="color:#f44336">dangerous</span> (thesis looks good but evidence is thin)<br>
+                        High Hunter + High Conviction = <span style="color:#4CAF50">real signal</span> (multiple data sources agree)
+                    </div>
+                </div>
+            </div>
+            <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:16px">
+                <div style="flex:1;min-width:180px">
+                    <div style="font-size:13px;font-weight:800;color:#FFC107;margin-bottom:8px">💰 CAP (Capital Attraction — 20%)</div>
+                    <div style="font-size:12px;color:#c9d1d9">
+                        <em>"Is large capital likely to flow here?"</em><br>
+                        <span style="color:#4CAF50">90+</span> = Capital actively migrating &nbsp;|&nbsp;
+                        <span style="color:#78909C">&lt;70</span> = No flow signal
+                    </div>
+                </div>
+                <div style="flex:1;min-width:180px">
+                    <div style="font-size:13px;font-weight:800;color:#AB47BC;margin-bottom:8px">⚡ FORCE (Structural Catalysts — 20%)</div>
+                    <div style="font-size:12px;color:#c9d1d9">
+                        <em>"Are real forces pushing capital into this stock?"</em><br>
+                        Analyst upgrades, insider buying, short squeeze, sector rotation<br>
+                        <span style="color:#4CAF50">90+</span> = Multiple forces converging &nbsp;|&nbsp;
+                        <span style="color:#78909C">&lt;70</span> = No catalyst
+                    </div>
+                </div>
+                <div style="flex:1;min-width:180px">
+                    <div style="font-size:13px;font-weight:800;color:#ef5350;margin-bottom:8px">👥 CROWD (Crowding — 10%, INVERSE)</div>
+                    <div style="font-size:12px;color:#c9d1d9">
+                        <strong style="color:#FFC107">Lower is better.</strong> <em>"Is everyone already in this trade?"</em><br>
+                        <span style="color:#4CAF50">&lt;40</span> = Uncrowded, ideal &nbsp;|&nbsp;
+                        <span style="color:#FFC107">60-70</span> = Getting crowded &nbsp;|&nbsp;
+                        <span style="color:#f44336">80+</span> = Dangerous
+                    </div>
+                </div>
+            </div>
+            <div style="margin-top:16px;padding-top:12px;border-top:1px solid #21262d">
+                <div style="font-size:12px;font-weight:700;color:#06b6d4;margin-bottom:6px">QUICK DECISION FRAMEWORK</div>
+                <div style="font-size:12px;color:#c9d1d9">
+                    ✅ <strong>Best setup:</strong> High Hunter + High CAP + High Force + Low Crowd = capital flowing, catalysts firing, nobody noticed yet<br>
+                    ⚠️ <strong>Caution:</strong> High Hunter + Low Conviction = data incomplete, don't trust it<br>
+                    🟡 <strong>Wait:</strong> High CAP + Low Force = capital wants to go there but no catalyst yet<br>
+                    🔴 <strong>Late:</strong> High Force + High Crowd = catalyst exists but everyone already positioned<br>
+                    ❌ <strong>Pass:</strong> Low Crowd + Low CAP = nobody cares and there's no reason to
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
     cmd_tab1, cmd_tab2, cmd_tab3, cmd_tab4 = st.tabs(["📊 Command Center", "🔍 Deep Analysis", "🌐 Universe", "💰 Smart Money"])
 
     with cmd_tab1:
@@ -8247,11 +8322,27 @@ elif page == "6️⃣ Hunter Command by Louis Teo":
                 """, unsafe_allow_html=True)
 
                 if not go_stocks:
-                    st.markdown("""
+                    max_hs = max(r["conviction"] for r in all_sorted) if all_sorted else 0
+                    avg_hs = sum(r["conviction"] for r in all_sorted) / len(all_sorted) if all_sorted else 0
+                    if max_hs < 70:
+                        mkt_cond = "BEAR / RISK-OFF MARKET"
+                        mkt_desc = "No stock in the universe scores above 70. Capital is leaving risk assets. This is a stay-in-cash environment."
+                        mkt_color = "#f44336"
+                    elif max_hs < 80:
+                        mkt_cond = "BORING / CONSOLIDATING MARKET"
+                        mkt_desc = "Top stocks score 70-80 but lack conviction. Market is consolidating — no clear direction yet. Watch for breakouts."
+                        mkt_color = "#FFC107"
+                    else:
+                        mkt_cond = "EMERGING OPPORTUNITIES"
+                        mkt_desc = "Some stocks near WAIT threshold. Catalysts forming but timing not confirmed. Stay alert."
+                        mkt_color = "#29B6F6"
+                    st.markdown(f"""
                     <div style="background:#161b27;border:1px solid #3a4460;border-radius:12px;padding:30px;text-align:center;margin:10px 0">
                         <div style="font-size:20px;font-weight:800;color:#78909C;letter-spacing:2px">NO GO CANDIDATES TODAY</div>
-                        <div style="font-size:13px;color:#8a9bb5;margin-top:8px">This is acceptable and preferred over forcing trades. Patience is the system's edge.</div>
-                        <div style="font-size:12px;color:#FFC107;margin-top:12px">Review WAIT candidates below for emerging opportunities.</div>
+                        <div style="font-size:14px;font-weight:700;color:{mkt_color};margin-top:12px;letter-spacing:2px">📡 MARKET CONDITION: {mkt_cond}</div>
+                        <div style="font-size:12px;color:#8a9bb5;margin-top:8px;max-width:600px;margin-left:auto;margin-right:auto">{mkt_desc}</div>
+                        <div style="font-size:12px;color:#8a9bb5;margin-top:12px">Top Hunter: <strong style="color:{mkt_color}">{max_hs:.0f}</strong> · Average: <strong>{avg_hs:.0f}</strong> · Universe: {len(all_sorted)} stocks</div>
+                        <div style="font-size:11px;color:#FFC107;margin-top:12px">This is acceptable. The system does NOT force trades. Patience is the edge.</div>
                     </div>
                     """, unsafe_allow_html=True)
                 else:
