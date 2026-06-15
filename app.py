@@ -5826,13 +5826,14 @@ def render_opportunity_table(rows, count=12, show_thesis=True):
                 <div style="font-size:14px;font-weight:700;color:#e8ecf4">${r['price']:.2f}</div>
                 <div style="font-size:9px;color:#8a9bb5">PRICE</div>
             </div>
-            <div style="min-width:50px;text-align:center">
+            <div style="min-width:60px;text-align:center">
                 <div style="font-size:14px;font-weight:700;color:{ret_c}">{r['expected_ret']:+.0f}%</div>
-                <div style="font-size:9px;color:#8a9bb5">TARGET</div>
+                <div style="font-size:9px;color:#8a9bb5">ANALYST TARGET</div>
             </div>
-            <div style="min-width:50px;text-align:center">
+            <div style="min-width:70px;text-align:center">
                 <div style="font-size:14px;font-weight:700;color:{'#4CAF50' if r['mom_15'] >= 0 else '#f44336'}">{r['mom_15']:+.1f}%</div>
-                <div style="font-size:9px;color:#8a9bb5">15D MOM</div>
+                <div style="font-size:9px;color:#8a9bb5">15D MOMENTUM</div>
+                {'<div style="font-size:8px;font-weight:700;color:#000;background:#f44336;border-radius:6px;padding:1px 6px;margin-top:2px">⚠️ FALLING</div>' if r['mom_15'] < -10 else ('<div style="font-size:8px;font-weight:700;color:#000;background:#FFC107;border-radius:6px;padding:1px 6px;margin-top:2px">⚠️ WEAK</div>' if r['mom_15'] < -5 else '')}
             </div>
             <div style="flex:1;min-width:100px">
                 {bn_badge}{thesis_html}
