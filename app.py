@@ -402,7 +402,7 @@ def _fmp(endpoint, params=None):
     p = params or {}
     p["apikey"] = FMP_KEY
     try:
-        r = requests.get(f"https://financialmodelingprep.com/api/v3/{endpoint}", params=p, timeout=10)
+        r = requests.get(f"https://financialmodelingprep.com/stable/{endpoint}", params=p, timeout=10)
         if r.status_code == 200:
             return r.json()
     except Exception:
@@ -442,7 +442,9 @@ def _get_cik(ticker):
             data = r.json()
             hits = data.get("hits", {}).get("hits", [])
             if hits:
-                cik = str(hits[0].get("_source", {}).get("entity_id", ""))
+                source = hits[0].get("_source", {})
+                ciks = source.get("ciks", [])
+                cik = str(ciks[0]) if ciks else str(source.get("entity_id", ""))
                 if cik:
                     _CIK_CACHE[t] = cik.zfill(10)
                     return _CIK_CACHE[t]
@@ -461,12 +463,14 @@ def fetch_finviz(ticker):
         text = r.text
         data = {}
         import re as _re
-        rows = _re.findall(r'<td[^>]*class="snapshot-td2-cp"[^>]*>(.*?)</td>\s*<td[^>]*class="snapshot-td2"[^>]*><b>(.*?)</b></td>', text, _re.DOTALL)
+        rows = _re.findall(r'<div class="snapshot-td-label">(.*?)</div>.*?<div class="snapshot-td-content"><b>(.*?)</b></div>', text, _re.DOTALL)
+        if not rows:
+            rows = _re.findall(r'<td[^>]*class="snapshot-td2-cp"[^>]*>(.*?)</td>\s*<td[^>]*class="snapshot-td2"[^>]*><b>(.*?)</b></td>', text, _re.DOTALL)
         if not rows:
             rows = _re.findall(r'<td[^>]*>([\w\s/%.]+)</td>\s*<td[^>]*><b>([^<]+)</b></td>', text, _re.DOTALL)
         for label, value in rows:
-            label = label.strip()
-            value = value.strip()
+            label = _re.sub(r'<[^>]+>', '', label).strip()
+            value = _re.sub(r'<[^>]+>', '', value).strip()
             data[label] = value
         return data
     except Exception:
@@ -515,14 +519,14 @@ def fetch_finnhub_earnings_calendar(ticker):
 
 @st.cache_data(ttl=86400)
 def fetch_fmp_profile(ticker):
-    data = _fmp(f"profile/{ticker}")
+    data = _fmp("profile", {"symbol": ticker})
     if data and isinstance(data, list) and len(data) > 0:
         return data[0]
     return None
 
 @st.cache_data(ttl=86400)
 def fetch_fmp_key_metrics(ticker):
-    return _fmp(f"key-metrics/{ticker}", {"limit": 4})
+    return _fmp("key-metrics", {"symbol": ticker, "limit": 4})
 
 @st.cache_data(ttl=86400)
 def fetch_edgar_facts(ticker):
@@ -651,10 +655,12 @@ def fetch_enriched_data(ticker):
     fmp_km = fetch_fmp_key_metrics(ticker)
     if fmp_km and isinstance(fmp_km, list) and len(fmp_km) > 0:
         latest_km = fmp_km[0]
-        if latest_km.get("roic") is not None:
-            enriched["roic"] = latest_km["roic"]
-        if latest_km.get("roe") is not None:
-            enriched["roe"] = latest_km["roe"]
+        roic = latest_km.get("returnOnInvestedCapital") or latest_km.get("roic")
+        if roic is not None:
+            enriched["roic"] = roic
+        roe = latest_km.get("returnOnEquity") or latest_km.get("roe")
+        if roe is not None:
+            enriched["roe"] = roe
 
     enriched["data_quality"] = round(fields_filled / total_fields * 100)
     return enriched
@@ -3598,11 +3604,14 @@ def score_positioning(info, hist, scores, cm, enriched=None):
             s += 15
             reasons.append(f"Institutional ownership {inst*100:.0f}% — below average, room for discovery")
         elif inst < 0.70:
-            s += 5
-            reasons.append(f"Institutional ownership {inst*100:.0f}% — moderate, some discovery left")
-        elif inst > 0.85:
-            s -= 10
-            reasons.append(f"Institutional ownership {inst*100:.0f}% — fully owned, no marginal buyer left")
+            s += 8
+            reasons.append(f"Institutional ownership {inst*100:.0f}% — moderate, room for further accumulation")
+        elif inst < 0.85:
+            s += 3
+            reasons.append(f"Institutional ownership {inst*100:.0f}% — well-owned but not saturated")
+        else:
+            s -= 5
+            reasons.append(f"Institutional ownership {inst*100:.0f}% — fully owned, limited marginal buyer")
     else:
         reasons.append("Institutional ownership data unavailable — cannot assess positioning")
 
@@ -3617,14 +3626,20 @@ def score_positioning(info, hist, scores, cm, enriched=None):
         elif n_analysts <= 8:
             s += 10
             reasons.append(f"{n_analysts} analysts — below average coverage, still under-followed")
-        elif n_analysts >= 30:
-            s -= 8
-            reasons.append(f"{n_analysts} analysts — heavily covered, no information edge")
+        elif n_analysts <= 20:
+            s += 3
+            reasons.append(f"{n_analysts} analysts — moderate coverage")
+        elif n_analysts >= 40:
+            s -= 5
+            reasons.append(f"{n_analysts} analysts — heavily covered, consensus risk")
     else:
         reasons.append("Analyst coverage data unavailable")
 
     price = safe(info, "currentPrice", "regularMarketPrice", default=0) or 0
-    target = enriched.get("target_price") or safe(info, "targetMeanPrice", default=0) or 0
+    target = safe(info, "targetMeanPrice", default=0) or 0
+    enr_tp = enriched.get("target_price")
+    if enr_tp and price and enr_tp > price * 0.5:
+        target = enr_tp
     if price and target and target > 0:
         upside = (target - price) / price * 100
         if upside > 40:
@@ -3807,7 +3822,7 @@ def score_scarcity(info, hist, scores, cm, enriched=None):
 
 def score_timing(info, hist, scores, cm, enriched=None):
     """Timing Score: Is the catalyst window opening NOW? Product launches, earnings, M&A, regulatory."""
-    s = 30
+    s = 40
     reasons = []
     enriched = enriched or {}
 
@@ -3820,11 +3835,17 @@ def score_timing(info, hist, scores, cm, enriched=None):
             s += 20
             reasons.append(f"Strong momentum: +{mom_20:.1f}% in 20 days, +{mom_5:.1f}% in 5 days — catalysts are firing NOW")
         elif mom_20 > 8:
-            s += 12
+            s += 14
             reasons.append(f"Building momentum: +{mom_20:.1f}% in 20 days — capital is starting to arrive")
+        elif mom_20 > 3:
+            s += 8
+            reasons.append(f"Positive momentum: +{mom_20:.1f}% in 20 days — trend forming")
         elif mom_20 > 0:
             s += 4
             reasons.append(f"Mild uptrend: +{mom_20:.1f}% in 20 days")
+        elif mom_20 > -10:
+            s -= 3
+            reasons.append(f"Mild pullback: {mom_20:.1f}% in 20 days — may be entry window")
         elif mom_20 < -10:
             s -= 5
             reasons.append(f"Negative momentum: {mom_20:.1f}% in 20 days — timing may be early")
@@ -3835,16 +3856,21 @@ def score_timing(info, hist, scores, cm, enriched=None):
     if qrg and qrg > rg and qrg > 0.15:
         s += 12
         reasons.append(f"Revenue ACCELERATING: quarterly {qrg*100:.0f}% vs annual {rg*100:.0f}% — inflection point")
-    elif len(quarterly_revs) >= 4:
-        vals = [v for _, v in quarterly_revs[:4] if v and v > 0]
+    elif len(quarterly_revs) >= 2:
+        vals = [v for _, v in quarterly_revs if v and v > 0]
         if len(vals) >= 4 and vals[0] > vals[3]:
             q_growth = (vals[0] - vals[3]) / vals[3]
-            if q_growth > rg and q_growth > 0.15:
-                s += 12
-                reasons.append(f"Revenue ACCELERATING (EDGAR): quarterly {q_growth*100:.0f}% vs annual {rg*100:.0f}%")
+            if q_growth > 0.20:
+                s += 14
+                reasons.append(f"Revenue ACCELERATING (EDGAR): {q_growth*100:.0f}% YoY quarterly growth")
             elif q_growth > 0.10:
-                s += 6
-                reasons.append(f"Revenue growth (EDGAR): {q_growth*100:.0f}% sequential improvement")
+                s += 8
+                reasons.append(f"Revenue growing (EDGAR): {q_growth*100:.0f}% YoY quarterly")
+        elif len(vals) >= 2 and vals[0] > vals[1]:
+            seq_growth = (vals[0] - vals[1]) / vals[1]
+            if seq_growth > 0.05:
+                s += 8
+                reasons.append(f"Sequential revenue growth (EDGAR): {seq_growth*100:.0f}% QoQ")
     elif rg > 0.20:
         s += 8
         reasons.append(f"Revenue growing {rg*100:.0f}% — catalyst is sustained demand")
@@ -3860,7 +3886,10 @@ def score_timing(info, hist, scores, cm, enriched=None):
         reasons.append(f"Volume {vol_ratio:.1f}x above average — increasing attention")
 
     price = safe(info, "currentPrice", "regularMarketPrice", default=0) or 0
-    target = enriched.get("target_price") or safe(info, "targetMeanPrice", default=0) or 0
+    target = safe(info, "targetMeanPrice", default=0) or 0
+    enr_tp = enriched.get("target_price")
+    if enr_tp and price and enr_tp > price * 0.5:
+        target = enr_tp
     if price and target:
         upside = (target - price) / price * 100
         if upside > 30:
