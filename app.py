@@ -6098,44 +6098,60 @@ def render_opportunity_table(rows, count=12, show_thesis=True):
         sig_c = r["signal_color"]
         conv_c = "#4CAF50" if r["conviction"] >= 65 else ("#FFC107" if r["conviction"] >= 45 else "#f44336")
         ret_c = "#4CAF50" if r["expected_ret"] >= 0 else "#f44336"
-        bn_badge = '<span style="background:#1a3a1a;border:1px solid #4CAF50;border-radius:12px;padding:1px 8px;font-size:9px;color:#66d166;margin-left:6px">BOTTLENECK</span>' if r["is_bottleneck"] else ""
-        thesis_html = f'<div style="font-size:11px;color:#b0bcd4;margin-top:6px;line-height:1.5">{r["one_sentence"]}</div>' if show_thesis and r["one_sentence"] else ""
-        st.markdown(f"""
-        <div style="background:#161b27;border-radius:10px;padding:12px 16px;margin-bottom:6px;border-left:4px solid {sig_c};display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap">
-            <div style="min-width:60px">
-                <div style="font-size:16px;font-weight:900;color:#ffffff">{r['ticker']}</div>
-                <div style="font-size:10px;color:#8a9bb5">{r['name']}</div>
-            </div>
-            <div style="min-width:65px;text-align:center">
-                <div style="font-size:20px;font-weight:900;color:{conv_c}">{r['conviction']:.0f}</div>
-                <div style="font-size:9px;color:#8a9bb5">CONVICTION</div>
-            </div>
-            <div style="min-width:65px;text-align:center">
-                <div style="font-size:14px;font-weight:800;color:{sig_c}">{r['signal']}</div>
-                <div style="font-size:9px;color:#8a9bb5">SIGNAL</div>
-            </div>
-            <div style="min-width:70px;text-align:center">
-                <div style="font-size:12px;color:#e8ecf4">{r['theme_icon']} {r['theme'][:18]}</div>
-                <div style="font-size:9px;color:#8a9bb5">THEME</div>
-            </div>
-            <div style="min-width:50px;text-align:center">
-                <div style="font-size:14px;font-weight:700;color:#e8ecf4">${r['price']:.2f}</div>
-                <div style="font-size:9px;color:#8a9bb5">PRICE</div>
-            </div>
-            <div style="min-width:60px;text-align:center">
-                <div style="font-size:14px;font-weight:700;color:{ret_c}">{r['expected_ret']:+.0f}%</div>
-                <div style="font-size:9px;color:#8a9bb5">ANALYST TARGET</div>
-            </div>
-            <div style="min-width:70px;text-align:center">
-                <div style="font-size:14px;font-weight:700;color:{'#4CAF50' if r['mom_15'] >= 0 else '#f44336'}">{r['mom_15']:+.1f}%</div>
-                <div style="font-size:9px;color:#8a9bb5">15D MOMENTUM</div>
-                {'<div style="font-size:8px;font-weight:700;color:#000;background:#f44336;border-radius:6px;padding:1px 6px;margin-top:2px">⚠️ FALLING</div>' if r['mom_15'] < -10 else ('<div style="font-size:8px;font-weight:700;color:#000;background:#FFC107;border-radius:6px;padding:1px 6px;margin-top:2px">⚠️ WEAK</div>' if r['mom_15'] < -5 else '')}
-            </div>
-            <div style="flex:1;min-width:100px">
-                {bn_badge}{thesis_html}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        mom_c = "#4CAF50" if r["mom_15"] >= 0 else "#f44336"
+
+        bn_badge = ""
+        if r["is_bottleneck"]:
+            bn_badge = '<span style="background:#1a3a1a;border:1px solid #4CAF50;border-radius:12px;padding:1px 8px;font-size:9px;color:#66d166;margin-left:6px">BOTTLENECK</span>'
+
+        thesis_html = ""
+        if show_thesis and r["one_sentence"]:
+            thesis_html = '<div style="font-size:11px;color:#b0bcd4;margin-top:6px;line-height:1.5">' + r["one_sentence"] + '</div>'
+
+        mom_badge = ""
+        if r["mom_15"] < -10:
+            mom_badge = '<div style="font-size:8px;font-weight:700;color:#000;background:#f44336;border-radius:6px;padding:1px 6px;margin-top:2px">⚠️ FALLING</div>'
+        elif r["mom_15"] < -5:
+            mom_badge = '<div style="font-size:8px;font-weight:700;color:#000;background:#FFC107;border-radius:6px;padding:1px 6px;margin-top:2px">⚠️ WEAK</div>'
+
+        html = (
+            '<div style="background:#161b27;border-radius:10px;padding:12px 16px;margin-bottom:6px;'
+            'border-left:4px solid ' + sig_c + ';display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap">'
+            '<div style="min-width:60px">'
+            '<div style="font-size:16px;font-weight:900;color:#ffffff">' + r['ticker'] + '</div>'
+            '<div style="font-size:10px;color:#8a9bb5">' + r['name'] + '</div>'
+            '</div>'
+            '<div style="min-width:65px;text-align:center">'
+            '<div style="font-size:20px;font-weight:900;color:' + conv_c + '">' + f"{r['conviction']:.0f}" + '</div>'
+            '<div style="font-size:9px;color:#8a9bb5">CONVICTION</div>'
+            '</div>'
+            '<div style="min-width:65px;text-align:center">'
+            '<div style="font-size:14px;font-weight:800;color:' + sig_c + '">' + r['signal'] + '</div>'
+            '<div style="font-size:9px;color:#8a9bb5">SIGNAL</div>'
+            '</div>'
+            '<div style="min-width:70px;text-align:center">'
+            '<div style="font-size:12px;color:#e8ecf4">' + r['theme_icon'] + ' ' + r['theme'][:18] + '</div>'
+            '<div style="font-size:9px;color:#8a9bb5">THEME</div>'
+            '</div>'
+            '<div style="min-width:50px;text-align:center">'
+            '<div style="font-size:14px;font-weight:700;color:#e8ecf4">$' + f"{r['price']:.2f}" + '</div>'
+            '<div style="font-size:9px;color:#8a9bb5">PRICE</div>'
+            '</div>'
+            '<div style="min-width:60px;text-align:center">'
+            '<div style="font-size:14px;font-weight:700;color:' + ret_c + '">' + f"{r['expected_ret']:+.0f}%" + '</div>'
+            '<div style="font-size:9px;color:#8a9bb5">ANALYST TARGET</div>'
+            '</div>'
+            '<div style="min-width:70px;text-align:center">'
+            '<div style="font-size:14px;font-weight:700;color:' + mom_c + '">' + f"{r['mom_15']:+.1f}%" + '</div>'
+            '<div style="font-size:9px;color:#8a9bb5">15D MOMENTUM</div>'
+            + mom_badge +
+            '</div>'
+            '<div style="flex:1;min-width:100px">'
+            + bn_badge + thesis_html +
+            '</div>'
+            '</div>'
+        )
+        st.markdown(html, unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────
