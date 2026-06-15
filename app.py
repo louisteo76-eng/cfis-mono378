@@ -6214,7 +6214,7 @@ with st.sidebar:
         "3️⃣ Opportunity Engine",
         "4️⃣ Portfolio Commander",
         "5️⃣ Validation Engine",
-        "6️⃣ Hunter Command",
+        "6️⃣ Hunter Command by Louis Teo",
     ], label_visibility="collapsed")
     st.divider()
     st.caption("Data: Yahoo Finance · Cache: 5 min")
@@ -8137,8 +8137,8 @@ elif page == "5️⃣ Validation Engine":
         st.caption("⚠️ Returns measured from March 1, 2026 to today. Conviction scores are current (not historical snapshots). Future versions will store conviction at time of signal for true forward-looking validation.")
 
 
-elif page == "6️⃣ Hunter Command":
-    st.title("🎯 CFIS Hunter™ Command Center")
+elif page == "6️⃣ Hunter Command by Louis Teo":
+    st.title("🎯 CFIS Hunter™ Command Center by Louis Teo")
     st.caption("Capital Flow Hunting System — Not a screener. Not a valuation tool. A capital flow prediction engine.")
 
     st.markdown("""
