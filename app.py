@@ -5538,6 +5538,302 @@ def render_smart_money_pressure(smp, ticker):
 
 
 # ─────────────────────────────────────────────────────────────
+# OPTIONS INTELLIGENCE by Louis Teo
+# Trend-based options signal generator
+# ─────────────────────────────────────────────────────────────
+
+SP500_LIQUID = [
+    "AAPL","MSFT","NVDA","AMZN","GOOGL","META","TSLA","BRK-B","AVGO","JPM",
+    "LLY","UNH","V","XOM","MA","COST","HD","PG","JNJ","ABBV",
+    "NFLX","CRM","BAC","AMD","ORCL","WMT","CVX","MRK","KO","PEP",
+    "TMO","ACN","MCD","LIN","ABT","ADBE","PM","ISRG","CSCO","GE",
+    "IBM","INTU","TXN","QCOM","VZ","AMGN","AMAT","NOW","CAT","BKNG",
+    "GS","HON","AXP","PFE","T","MS","BLK","SPGI","RTX","SYK",
+    "SCHW","UNP","NEE","LOW","VRTX","DE","PGR","BA","MDLZ","BMY",
+    "LMT","ADI","GILD","REGN","ADP","MMC","ETN","CB","TMUS","SO",
+    "LRCX","MU","SHW","CME","FI","KLAC","SNPS","CDNS","DUK","MCK",
+    "APD","ICE","PYPL","AON","CL","TT","NOC","WM","CMG","EOG",
+    "GD","USB","ORLY","PH","HUM","SLB","ABNB","ITW","FDX","MRVL",
+    "PANW","TDG","AJG","ANET","AFL","BDX","CTAS","RCL","NSC","PSA",
+    "MPC","PCAR","CCI","AEP","DLR","MSI","SPG","TFC","KMB","JCI",
+    "D","SRE","F","GM","O","AIG","ALL","PSX","EMR","WEC",
+    "CRWD","PLTR","COIN","MSTR","SMCI","VRT","CEG","VST","ARM","SNOW",
+    "DDOG","ZS","FTNT","NET","HOOD","DELL","HPE","OKLO","SMR","RKLB",
+    "SOFI","RIVN","LCID","NIO","MARA","RIOT","IONQ","RGTI","JOBY","SOUN",
+    "AI","RXRX","ACHR","UPST","DNA","FUTU","NU","U","RBLX","SE",
+    "BABA","PDD","JD","SHOP","GRAB","DKNG","DASH","UBER","LYFT","ROKU",
+    "SNAP","PINS","TTD","BILL","HUBS","TWLO","OKTA","MDB","DOCU","TEAM",
+]
+
+@st.cache_data(ttl=600)
+def fetch_fear_greed_index():
+    try:
+        r = requests.get("https://production.dataviz.cnn.io/index/fearandgreed/graphdata", timeout=8,
+                         headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code == 200:
+            data = r.json()
+            score = data.get("fear_and_greed", {}).get("score", 50)
+            rating = data.get("fear_and_greed", {}).get("rating", "Neutral")
+            return {"score": round(score), "rating": rating}
+    except Exception:
+        pass
+    return {"score": 50, "rating": "Neutral"}
+
+
+@st.cache_data(ttl=600)
+def compute_trend_strength(ticker):
+    try:
+        tk = yf.Ticker(ticker)
+        hist = tk.history(period="3mo")
+        if hist.empty or len(hist) < 30:
+            return None
+        info = tk.info or {}
+        price = hist["Close"].iloc[-1]
+        avg_vol = hist["Volume"].iloc[-5:].mean()
+        if avg_vol < 500_000:
+            return None
+
+        p15 = hist["Close"].iloc[-15] if len(hist) >= 15 else hist["Close"].iloc[0]
+        p30 = hist["Close"].iloc[-30] if len(hist) >= 30 else hist["Close"].iloc[0]
+        mom_15 = (price - p15) / p15 * 100
+        mom_30 = (price - p30) / p30 * 100
+
+        sma_10 = hist["Close"].iloc[-10:].mean()
+        sma_20 = hist["Close"].iloc[-20:].mean()
+        sma_50 = hist["Close"].iloc[-50:].mean() if len(hist) >= 50 else sma_20
+
+        vol_ratio = hist["Volume"].iloc[-5:].mean() / hist["Volume"].iloc[-30:].mean() if hist["Volume"].iloc[-30:].mean() > 0 else 1
+
+        trend_score = 50
+        direction = "NEUTRAL"
+
+        if mom_15 > 3 and mom_30 > 5:
+            trend_score = 70 + min(mom_15, 20)
+            direction = "UPTREND"
+        elif mom_15 > 1 and price > sma_10 > sma_20:
+            trend_score = 65 + min(mom_15 * 2, 15)
+            direction = "UPTREND"
+        elif mom_15 < -3 and mom_30 < -5:
+            trend_score = 70 + min(abs(mom_15), 20)
+            direction = "DOWNTREND"
+        elif mom_15 < -1 and price < sma_10 < sma_20:
+            trend_score = 65 + min(abs(mom_15) * 2, 15)
+            direction = "DOWNTREND"
+
+        if direction == "UPTREND" and price > sma_50:
+            trend_score += 5
+        elif direction == "DOWNTREND" and price < sma_50:
+            trend_score += 5
+
+        if vol_ratio > 1.3:
+            trend_score += 5
+
+        trend_score = min(100, trend_score)
+
+        rsi_14 = _compute_rsi(hist["Close"], 14)
+
+        return {
+            "ticker": ticker,
+            "price": round(price, 2),
+            "mom_15": round(mom_15, 1),
+            "mom_30": round(mom_30, 1),
+            "direction": direction,
+            "trend_score": round(trend_score),
+            "vol_ratio": round(vol_ratio, 2),
+            "rsi": round(rsi_14) if rsi_14 else 50,
+            "sma_10": round(sma_10, 2),
+            "sma_20": round(sma_20, 2),
+            "sma_50": round(sma_50, 2),
+            "avg_vol": int(avg_vol),
+            "market_cap": safe(info, "marketCap", default=0) or 0,
+        }
+    except Exception:
+        return None
+
+
+def _compute_rsi(series, period=14):
+    try:
+        delta = series.diff()
+        gain = delta.where(delta > 0, 0).rolling(window=period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        rs = gain.iloc[-1] / loss.iloc[-1] if loss.iloc[-1] > 0 else 100
+        return 100 - (100 / (1 + rs))
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=600)
+def generate_options_signals(universe_tuple):
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    universe = list(universe_tuple)
+    trends = {}
+    with ThreadPoolExecutor(max_workers=15) as pool:
+        futures = {pool.submit(compute_trend_strength, t): t for t in universe}
+        for f in as_completed(futures):
+            t = futures[f]
+            try:
+                result = f.result()
+                if result:
+                    trends[t] = result
+            except Exception:
+                pass
+
+    uptrends = [v for v in trends.values() if v["direction"] == "UPTREND"]
+    downtrends = [v for v in trends.values() if v["direction"] == "DOWNTREND"]
+
+    uptrends.sort(key=lambda x: x["trend_score"], reverse=True)
+    downtrends.sort(key=lambda x: x["trend_score"], reverse=True)
+
+    call_candidates = uptrends[:20]
+    put_candidates = downtrends[:20]
+
+    fg = fetch_fear_greed_index()
+    fg_score = fg["score"]
+
+    call_setups = []
+    for c in call_candidates:
+        try:
+            smp = compute_smart_money_pressure(c["ticker"])
+        except Exception:
+            smp = {"score": 50, "signal": "Neutral", "components": {}}
+
+        conviction = 0
+        reasons = []
+
+        conviction += c["trend_score"] * 0.30
+        reasons.append(f"Trend {c['trend_score']}/100")
+
+        if smp["score"] >= 65:
+            conviction += smp["score"] * 0.25
+            reasons.append(f"Smart Money {smp['score']}/100 ({smp['signal']})")
+        else:
+            conviction += smp["score"] * 0.15
+            reasons.append(f"Smart Money {smp['score']}/100")
+
+        if fg_score >= 60:
+            conviction += 8
+            reasons.append(f"Greed {fg_score}")
+        elif fg_score >= 40:
+            conviction += 4
+
+        if c["rsi"] > 30 and c["rsi"] < 70:
+            conviction += 6
+            reasons.append(f"RSI {c['rsi']} (healthy)")
+        elif c["rsi"] >= 70:
+            conviction -= 5
+            reasons.append(f"RSI {c['rsi']} (overbought ⚠️)")
+
+        if c["vol_ratio"] > 1.3:
+            conviction += 5
+            reasons.append(f"Vol surge {c['vol_ratio']}x")
+
+        conviction = min(100, max(0, conviction))
+
+        if c["mom_15"] > 5:
+            entry_timing = "Now — 3 days"
+        elif c["mom_15"] > 2:
+            entry_timing = "1 — 4 days"
+        else:
+            entry_timing = "3 — 5 days (wait for confirmation)"
+
+        call_setups.append({
+            "ticker": c["ticker"],
+            "price": c["price"],
+            "direction": "CALL",
+            "conviction": round(conviction),
+            "trend_score": c["trend_score"],
+            "mom_15": c["mom_15"],
+            "mom_30": c["mom_30"],
+            "rsi": c["rsi"],
+            "vol_ratio": c["vol_ratio"],
+            "smart_money": smp["score"],
+            "smart_signal": smp["signal"],
+            "entry_window": entry_timing,
+            "strike_hint": f"ATM or 1-2 strikes OTM (${c['price']:.0f} area)",
+            "reasons": reasons,
+            "avg_vol": c["avg_vol"],
+        })
+
+    put_setups = []
+    for c in put_candidates:
+        try:
+            smp = compute_smart_money_pressure(c["ticker"])
+        except Exception:
+            smp = {"score": 50, "signal": "Neutral", "components": {}}
+
+        conviction = 0
+        reasons = []
+
+        conviction += c["trend_score"] * 0.30
+        reasons.append(f"Trend {c['trend_score']}/100")
+
+        if smp["score"] <= 40:
+            conviction += (100 - smp["score"]) * 0.25
+            reasons.append(f"Smart Money {smp['score']}/100 ({smp['signal']})")
+        elif smp["signal"] in ("Distribution", "Short Pressure", "Danger Zone"):
+            conviction += 15
+            reasons.append(f"Smart Money {smp['signal']}")
+        else:
+            conviction += (100 - smp["score"]) * 0.10
+
+        if fg_score <= 30:
+            conviction += 8
+            reasons.append(f"Fear {fg_score}")
+        elif fg_score <= 45:
+            conviction += 4
+
+        if c["rsi"] < 70 and c["rsi"] > 30:
+            conviction += 4
+        elif c["rsi"] <= 30:
+            conviction -= 5
+            reasons.append(f"RSI {c['rsi']} (oversold ⚠️)")
+
+        if c["vol_ratio"] > 1.3:
+            conviction += 5
+            reasons.append(f"Vol surge {c['vol_ratio']}x")
+
+        conviction = min(100, max(0, conviction))
+
+        if c["mom_15"] < -5:
+            entry_timing = "Now — 3 days"
+        elif c["mom_15"] < -2:
+            entry_timing = "1 — 4 days"
+        else:
+            entry_timing = "3 — 5 days (wait for breakdown)"
+
+        put_setups.append({
+            "ticker": c["ticker"],
+            "price": c["price"],
+            "direction": "PUT",
+            "conviction": round(conviction),
+            "trend_score": c["trend_score"],
+            "mom_15": c["mom_15"],
+            "mom_30": c["mom_30"],
+            "rsi": c["rsi"],
+            "vol_ratio": c["vol_ratio"],
+            "smart_money": smp["score"],
+            "smart_signal": smp["signal"],
+            "entry_window": entry_timing,
+            "strike_hint": f"ATM or 1-2 strikes OTM (${c['price']:.0f} area)",
+            "reasons": reasons,
+            "avg_vol": c["avg_vol"],
+        })
+
+    call_setups.sort(key=lambda x: x["conviction"], reverse=True)
+    put_setups.sort(key=lambda x: x["conviction"], reverse=True)
+
+    return {
+        "calls": call_setups[:5],
+        "puts": put_setups[:5],
+        "fear_greed": fg,
+        "total_scanned": len(trends),
+        "uptrend_count": len(uptrends),
+        "downtrend_count": len(downtrends),
+    }
+
+
+# ─────────────────────────────────────────────────────────────
 # V10 — OPPORTUNITY ENGINE SCANNER
 # ─────────────────────────────────────────────────────────────
 
@@ -6256,6 +6552,7 @@ with st.sidebar:
         "4️⃣ Portfolio Commander",
         "5️⃣ Validation Engine",
         "6️⃣ Hunter Command by Louis Teo",
+        "7️⃣ Options Intelligence by Louis Teo",
     ], label_visibility="collapsed")
     st.divider()
     st.caption("Data: Yahoo Finance · Cache: 5 min")
@@ -8614,4 +8911,277 @@ elif page == "6️⃣ Hunter Command by Louis Teo":
             </div>
         </div>
         """, unsafe_allow_html=True)
+
+
+# ═══════════════════════════════════════════════════════════════
+# PAGE 7 — OPTIONS INTELLIGENCE by Louis Teo
+# ═══════════════════════════════════════════════════════════════
+elif page == "7️⃣ Options Intelligence by Louis Teo":
+
+    st.markdown("""
+    <div style="margin-bottom:8px">
+        <span style="font-size:32px;font-weight:900;color:#ffffff">🎯 Options Intelligence</span>
+        <span style="font-size:14px;color:#7c3aed;font-weight:700;margin-left:8px">by Louis Teo</span><br>
+        <span style="font-size:15px;color:#b0bcd4">Trend-based CALL & PUT setups — powered by 18 theories + Smart Money + Fear & Greed</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div style="background:#1a0a2e;border:1px solid #7c3aed;border-radius:12px;padding:14px 18px;margin-bottom:16px">
+        <div style="font-size:10px;color:#FFC107;letter-spacing:2px;font-weight:700;margin-bottom:6px">⚠️ DISCLAIMER</div>
+        <div style="font-size:11px;color:#c9d1d9;line-height:1.8">
+            This is a <strong style="color:#FF9800">signal tool</strong>, not financial advice.
+            Options carry significant risk — you can lose your entire investment.
+            Entry windows are estimates based on trend momentum, not guaranteed dates.
+            Always do your own research and manage your risk. <strong style="color:#f44336">Never risk more than you can afford to lose.</strong>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    with st.expander("📖 How Options Intelligence Works", expanded=False):
+        st.markdown("""
+        <div style="font-size:12px;color:#c9d1d9;line-height:2.0">
+            <strong style="color:#7c3aed">Data Sources:</strong> S&P 500 + high-liquidity growth stocks (~200 tickers)<br>
+            <strong style="color:#7c3aed">Trend Detection:</strong> 15-day & 30-day momentum, SMA crossovers, volume surge<br>
+            <strong style="color:#7c3aed">Smart Money:</strong> Dark pool activity, options flow, short interest, ETF rotation<br>
+            <strong style="color:#7c3aed">Greed Factor:</strong> CNN Fear & Greed Index — market sentiment overlay<br>
+            <strong style="color:#7c3aed">RSI Filter:</strong> Avoids overbought (CALL) and oversold (PUT) traps<br><br>
+            <strong style="color:#4CAF50">CALL Setup</strong> = Strong uptrend + Smart Money accumulation + healthy RSI + greed<br>
+            <strong style="color:#f44336">PUT Setup</strong> = Strong downtrend + Smart Money distribution + fear + breakdown momentum<br><br>
+            <strong style="color:#FF9800">Entry Window:</strong> 1–5 day range based on trend strength (not an exact date)<br>
+            <strong style="color:#FF9800">Strike Hint:</strong> ATM or 1–2 strikes OTM for optimal risk/reward<br>
+            <strong style="color:#FF9800">Conviction:</strong> 0–100 score combining trend + smart money + sentiment + RSI + volume
+        </div>
+        """, unsafe_allow_html=True)
+
+    if st.button("⚡ SCAN OPTIONS SIGNALS", key="opt_intel_scan", type="primary", use_container_width=True):
+        st.session_state["opt_intel_triggered"] = True
+
+    if not st.session_state.get("opt_intel_triggered"):
+        st.info("Click the button above to scan ~200 stocks for options setups. This takes about 60–90 seconds.")
+    else:
+        with st.spinner("Scanning ~200 stocks for trend strength + Smart Money signals… This may take 60–90 seconds."):
+            try:
+                signals = generate_options_signals(tuple(SP500_LIQUID))
+            except Exception as e:
+                st.error(f"Scan failed: {e}")
+                signals = None
+
+        if signals:
+            fg = signals["fear_greed"]
+            fg_score = fg["score"]
+            fg_rating = fg["rating"]
+            if fg_score >= 75:
+                fg_color = "#4CAF50"
+                fg_label = "EXTREME GREED"
+            elif fg_score >= 55:
+                fg_color = "#66BB6A"
+                fg_label = "GREED"
+            elif fg_score >= 45:
+                fg_color = "#FFC107"
+                fg_label = "NEUTRAL"
+            elif fg_score >= 25:
+                fg_color = "#FF9800"
+                fg_label = "FEAR"
+            else:
+                fg_color = "#f44336"
+                fg_label = "EXTREME FEAR"
+
+            col_fg1, col_fg2, col_fg3, col_fg4 = st.columns(4)
+            with col_fg1:
+                st.markdown(f"""
+                <div style="background:#161b27;border-radius:12px;padding:16px;text-align:center">
+                    <div style="font-size:10px;color:#8a9bb5;letter-spacing:2px">FEAR & GREED</div>
+                    <div style="font-size:36px;font-weight:900;color:{fg_color}">{fg_score}</div>
+                    <div style="font-size:11px;color:{fg_color};font-weight:700">{fg_label}</div>
+                </div>
+                """, unsafe_allow_html=True)
+            with col_fg2:
+                st.markdown(f"""
+                <div style="background:#161b27;border-radius:12px;padding:16px;text-align:center">
+                    <div style="font-size:10px;color:#8a9bb5;letter-spacing:2px">STOCKS SCANNED</div>
+                    <div style="font-size:36px;font-weight:900;color:#ffffff">{signals['total_scanned']}</div>
+                    <div style="font-size:11px;color:#8a9bb5">of {len(SP500_LIQUID)}</div>
+                </div>
+                """, unsafe_allow_html=True)
+            with col_fg3:
+                st.markdown(f"""
+                <div style="background:#161b27;border-radius:12px;padding:16px;text-align:center">
+                    <div style="font-size:10px;color:#8a9bb5;letter-spacing:2px">UPTRENDS</div>
+                    <div style="font-size:36px;font-weight:900;color:#4CAF50">{signals['uptrend_count']}</div>
+                    <div style="font-size:11px;color:#4CAF50">CALL candidates</div>
+                </div>
+                """, unsafe_allow_html=True)
+            with col_fg4:
+                st.markdown(f"""
+                <div style="background:#161b27;border-radius:12px;padding:16px;text-align:center">
+                    <div style="font-size:10px;color:#8a9bb5;letter-spacing:2px">DOWNTRENDS</div>
+                    <div style="font-size:36px;font-weight:900;color:#f44336">{signals['downtrend_count']}</div>
+                    <div style="font-size:11px;color:#f44336">PUT candidates</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # ── TOP 5 CALL SETUPS ──
+            st.markdown("""
+            <div style="font-size:18px;font-weight:900;color:#4CAF50;margin-bottom:12px">
+                📈 TOP 5 CALL SETUPS <span style="font-size:12px;color:#8a9bb5;font-weight:400">— Buy calls on strong uptrends with accumulation</span>
+            </div>
+            """, unsafe_allow_html=True)
+
+            if signals["calls"]:
+                for i, setup in enumerate(signals["calls"], 1):
+                    conv_color = "#4CAF50" if setup["conviction"] >= 60 else ("#FFC107" if setup["conviction"] >= 40 else "#f44336")
+                    mom_color = "#4CAF50" if setup["mom_15"] >= 0 else "#f44336"
+                    sm_color = "#4CAF50" if setup["smart_money"] >= 60 else ("#FFC107" if setup["smart_money"] >= 45 else "#78909C")
+                    reasons_html = " · ".join(setup["reasons"])
+
+                    st.markdown(f"""
+                    <div style="background:#0a2a0a;border:1px solid #1a4a1a;border-radius:14px;padding:18px;margin-bottom:10px">
+                        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+                            <div style="min-width:30px;font-size:24px;font-weight:900;color:#4CAF50">#{i}</div>
+                            <div style="min-width:70px">
+                                <div style="font-size:20px;font-weight:900;color:#ffffff">{setup['ticker']}</div>
+                                <div style="font-size:11px;color:#8a9bb5">${setup['price']:.2f}</div>
+                            </div>
+                            <div style="min-width:70px;text-align:center">
+                                <div style="font-size:28px;font-weight:900;color:{conv_color}">{setup['conviction']}</div>
+                                <div style="font-size:9px;color:#8a9bb5;letter-spacing:1px">CONVICTION</div>
+                            </div>
+                            <div style="min-width:60px;text-align:center">
+                                <div style="font-size:16px;font-weight:700;color:#7c3aed">{setup['trend_score']}</div>
+                                <div style="font-size:9px;color:#8a9bb5">TREND</div>
+                            </div>
+                            <div style="min-width:60px;text-align:center">
+                                <div style="font-size:16px;font-weight:700;color:{sm_color}">{setup['smart_money']}</div>
+                                <div style="font-size:9px;color:#8a9bb5">SMART $</div>
+                            </div>
+                            <div style="min-width:60px;text-align:center">
+                                <div style="font-size:16px;font-weight:700;color:{mom_color}">{setup['mom_15']:+.1f}%</div>
+                                <div style="font-size:9px;color:#8a9bb5">15D MOM</div>
+                            </div>
+                            <div style="min-width:60px;text-align:center">
+                                <div style="font-size:14px;font-weight:700;color:#FFC107">{setup['rsi']}</div>
+                                <div style="font-size:9px;color:#8a9bb5">RSI</div>
+                            </div>
+                            <div style="flex:1;text-align:right">
+                                <div style="background:#4CAF5022;color:#4CAF50;padding:4px 12px;border-radius:8px;font-size:12px;font-weight:700;display:inline-block">📈 CALL</div>
+                            </div>
+                        </div>
+                        <div style="margin-top:12px;display:flex;gap:20px;flex-wrap:wrap">
+                            <div style="background:#0d1117;border-radius:8px;padding:8px 14px">
+                                <div style="font-size:9px;color:#8a9bb5;letter-spacing:1px">ENTRY WINDOW</div>
+                                <div style="font-size:13px;font-weight:700;color:#FFC107">{setup['entry_window']}</div>
+                            </div>
+                            <div style="background:#0d1117;border-radius:8px;padding:8px 14px">
+                                <div style="font-size:9px;color:#8a9bb5;letter-spacing:1px">STRIKE HINT</div>
+                                <div style="font-size:13px;font-weight:700;color:#c9d1d9">{setup['strike_hint']}</div>
+                            </div>
+                            <div style="background:#0d1117;border-radius:8px;padding:8px 14px">
+                                <div style="font-size:9px;color:#8a9bb5;letter-spacing:1px">30D MOMENTUM</div>
+                                <div style="font-size:13px;font-weight:700;color:{mom_color}">{setup['mom_30']:+.1f}%</div>
+                            </div>
+                            <div style="background:#0d1117;border-radius:8px;padding:8px 14px">
+                                <div style="font-size:9px;color:#8a9bb5;letter-spacing:1px">VOL SURGE</div>
+                                <div style="font-size:13px;font-weight:700;color:{'#4CAF50' if setup['vol_ratio'] > 1.3 else '#8a9bb5'}">{setup['vol_ratio']}x</div>
+                            </div>
+                        </div>
+                        <div style="margin-top:8px;font-size:11px;color:#8a9bb5;line-height:1.6">
+                            {reasons_html}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.warning("No strong CALL setups found. Market may lack clear uptrends.")
+
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # ── TOP 5 PUT SETUPS ──
+            st.markdown("""
+            <div style="font-size:18px;font-weight:900;color:#f44336;margin-bottom:12px">
+                📉 TOP 5 PUT SETUPS <span style="font-size:12px;color:#8a9bb5;font-weight:400">— Buy puts on strong downtrends with distribution</span>
+            </div>
+            """, unsafe_allow_html=True)
+
+            if signals["puts"]:
+                for i, setup in enumerate(signals["puts"], 1):
+                    conv_color = "#f44336" if setup["conviction"] >= 60 else ("#FFC107" if setup["conviction"] >= 40 else "#78909C")
+                    mom_color = "#f44336" if setup["mom_15"] < 0 else "#4CAF50"
+                    sm_color = "#f44336" if setup["smart_money"] <= 40 else ("#FFC107" if setup["smart_money"] <= 55 else "#78909C")
+                    reasons_html = " · ".join(setup["reasons"])
+
+                    st.markdown(f"""
+                    <div style="background:#2a0a0a;border:1px solid #4a1a1a;border-radius:14px;padding:18px;margin-bottom:10px">
+                        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+                            <div style="min-width:30px;font-size:24px;font-weight:900;color:#f44336">#{i}</div>
+                            <div style="min-width:70px">
+                                <div style="font-size:20px;font-weight:900;color:#ffffff">{setup['ticker']}</div>
+                                <div style="font-size:11px;color:#8a9bb5">${setup['price']:.2f}</div>
+                            </div>
+                            <div style="min-width:70px;text-align:center">
+                                <div style="font-size:28px;font-weight:900;color:{conv_color}">{setup['conviction']}</div>
+                                <div style="font-size:9px;color:#8a9bb5;letter-spacing:1px">CONVICTION</div>
+                            </div>
+                            <div style="min-width:60px;text-align:center">
+                                <div style="font-size:16px;font-weight:700;color:#7c3aed">{setup['trend_score']}</div>
+                                <div style="font-size:9px;color:#8a9bb5">TREND</div>
+                            </div>
+                            <div style="min-width:60px;text-align:center">
+                                <div style="font-size:16px;font-weight:700;color:{sm_color}">{setup['smart_money']}</div>
+                                <div style="font-size:9px;color:#8a9bb5">SMART $</div>
+                            </div>
+                            <div style="min-width:60px;text-align:center">
+                                <div style="font-size:16px;font-weight:700;color:{mom_color}">{setup['mom_15']:+.1f}%</div>
+                                <div style="font-size:9px;color:#8a9bb5">15D MOM</div>
+                            </div>
+                            <div style="min-width:60px;text-align:center">
+                                <div style="font-size:14px;font-weight:700;color:#FFC107">{setup['rsi']}</div>
+                                <div style="font-size:9px;color:#8a9bb5">RSI</div>
+                            </div>
+                            <div style="flex:1;text-align:right">
+                                <div style="background:#f4433622;color:#f44336;padding:4px 12px;border-radius:8px;font-size:12px;font-weight:700;display:inline-block">📉 PUT</div>
+                            </div>
+                        </div>
+                        <div style="margin-top:12px;display:flex;gap:20px;flex-wrap:wrap">
+                            <div style="background:#0d1117;border-radius:8px;padding:8px 14px">
+                                <div style="font-size:9px;color:#8a9bb5;letter-spacing:1px">ENTRY WINDOW</div>
+                                <div style="font-size:13px;font-weight:700;color:#FFC107">{setup['entry_window']}</div>
+                            </div>
+                            <div style="background:#0d1117;border-radius:8px;padding:8px 14px">
+                                <div style="font-size:9px;color:#8a9bb5;letter-spacing:1px">STRIKE HINT</div>
+                                <div style="font-size:13px;font-weight:700;color:#c9d1d9">{setup['strike_hint']}</div>
+                            </div>
+                            <div style="background:#0d1117;border-radius:8px;padding:8px 14px">
+                                <div style="font-size:9px;color:#8a9bb5;letter-spacing:1px">30D MOMENTUM</div>
+                                <div style="font-size:13px;font-weight:700;color:{mom_color}">{setup['mom_30']:+.1f}%</div>
+                            </div>
+                            <div style="background:#0d1117;border-radius:8px;padding:8px 14px">
+                                <div style="font-size:9px;color:#8a9bb5;letter-spacing:1px">VOL SURGE</div>
+                                <div style="font-size:13px;font-weight:700;color:{'#f44336' if setup['vol_ratio'] > 1.3 else '#8a9bb5'}">{setup['vol_ratio']}x</div>
+                            </div>
+                        </div>
+                        <div style="margin-top:8px;font-size:11px;color:#8a9bb5;line-height:1.6">
+                            {reasons_html}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.warning("No strong PUT setups found. Market may lack clear downtrends.")
+
+            # ── METHODOLOGY ──
+            st.markdown("""
+            <div style="background:#0d1117;border:1px solid #21262d;border-radius:12px;padding:16px;margin-top:20px">
+                <div style="font-size:10px;color:#FFC107;letter-spacing:2px;font-weight:700;margin-bottom:8px">METHODOLOGY</div>
+                <div style="font-size:11px;color:#c9d1d9;line-height:2.0">
+                    <strong style="color:#7c3aed">Trend Score (30%)</strong> — 15D/30D momentum + SMA alignment + volume confirmation<br>
+                    <strong style="color:#FF7043">Smart Money (25%)</strong> — Dark pool, off-exchange, options flow, gamma, short interest, ETF rotation, FTD<br>
+                    <strong style="color:#FF9800">Greed Factor (8%)</strong> — CNN Fear & Greed Index as market sentiment overlay<br>
+                    <strong style="color:#4FC3F7">RSI Filter (6%)</strong> — Avoids overbought CALL traps and oversold PUT traps<br>
+                    <strong style="color:#66BB6A">Volume Surge (5%)</strong> — Confirms institutional participation in the trend<br><br>
+                    <strong style="color:#f44336">Entry windows are 1–5 day ranges</strong> — not exact dates. Stronger trends get tighter windows.<br>
+                    <strong style="color:#f44336">Strike hints are approximate</strong> — ATM or 1–2 strikes OTM for the best risk/reward.
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
