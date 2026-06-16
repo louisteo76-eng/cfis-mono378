@@ -5928,6 +5928,118 @@ def _prefetch_yfinance(tickers):
     return results
 
 
+def cfis_projection(info, hist, hunter_score, conviction_score, crowding_score):
+    """CFIS 3.0 native price projection for 15D/30D/90D.
+    Uses real market momentum, RSI, volume, SMA structure, and CFIS conviction
+    to estimate expected % change at each horizon."""
+    if hist.empty or len(hist) < 30:
+        return {"15d": 0, "30d": 0, "90d": 0, "direction": "NEUTRAL", "confidence": 0}
+
+    price = hist["Close"].iloc[-1]
+
+    # Real momentum at multiple timeframes
+    mom_5 = (price - hist["Close"].iloc[-5]) / hist["Close"].iloc[-5] * 100 if len(hist) >= 5 else 0
+    mom_15 = (price - hist["Close"].iloc[-15]) / hist["Close"].iloc[-15] * 100 if len(hist) >= 15 else 0
+    mom_30 = (price - hist["Close"].iloc[-30]) / hist["Close"].iloc[-30] * 100 if len(hist) >= 30 else 0
+
+    # RSI — mean reversion pressure
+    try:
+        delta = hist["Close"].diff()
+        gain = delta.where(delta > 0, 0).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain.iloc[-1] / loss.iloc[-1] if loss.iloc[-1] > 0 else 100
+        rsi = 100 - (100 / (1 + rs))
+    except Exception:
+        rsi = 50
+
+    # SMA alignment — trend structure
+    sma_10 = hist["Close"].iloc[-10:].mean()
+    sma_20 = hist["Close"].iloc[-20:].mean()
+    sma_50 = hist["Close"].iloc[-50:].mean() if len(hist) >= 50 else sma_20
+    bullish_sma = price > sma_10 > sma_20 > sma_50
+    bearish_sma = price < sma_10 < sma_20 < sma_50
+
+    # Volume confirmation
+    vol_recent = hist["Volume"].iloc[-5:].mean()
+    vol_avg = hist["Volume"].iloc[-30:].mean()
+    vol_ratio = vol_recent / vol_avg if vol_avg > 0 else 1
+
+    # Base trend: weighted momentum (recent momentum matters more)
+    base_trend = mom_5 * 0.40 + mom_15 * 0.35 + mom_30 * 0.25
+
+    # Conviction multiplier: CFIS score drives how much we trust the trend
+    # 80+ conviction = strong trust, 60-80 = moderate, <60 = skeptical
+    conv_mult = 0.5 + (conviction_score / 100) * 0.8  # range: 0.5 to 1.3
+
+    # RSI mean reversion brake
+    rsi_adj = 0
+    if rsi > 75:
+        rsi_adj = -(rsi - 70) * 0.15  # overbought pulls projection down
+    elif rsi < 25:
+        rsi_adj = (30 - rsi) * 0.15  # oversold pushes projection up
+
+    # SMA structure bonus
+    sma_adj = 0
+    if bullish_sma:
+        sma_adj = 1.5
+    elif bearish_sma:
+        sma_adj = -1.5
+
+    # Volume confirmation bonus
+    vol_adj = 0
+    if vol_ratio > 1.3 and base_trend > 0:
+        vol_adj = 1.0
+    elif vol_ratio > 1.3 and base_trend < 0:
+        vol_adj = -1.0
+
+    # Crowding fade: if too crowded and trending up, reduce projection
+    crowd_adj = 0
+    if crowding_score > 65 and base_trend > 0:
+        crowd_adj = -(crowding_score - 60) * 0.08
+
+    # Combine all signals
+    daily_rate = (base_trend / 15) * conv_mult  # normalize to daily rate
+
+    proj_15 = daily_rate * 15 + rsi_adj + sma_adj + vol_adj + crowd_adj
+    proj_30 = daily_rate * 30 * 0.7 + rsi_adj * 1.2 + sma_adj * 1.5 + vol_adj + crowd_adj
+    proj_90 = daily_rate * 90 * 0.4 + rsi_adj * 1.5 + sma_adj * 2.5 + vol_adj * 1.5 + crowd_adj * 1.5
+
+    # Cap projections at realistic ranges
+    proj_15 = max(-25, min(25, proj_15))
+    proj_30 = max(-40, min(40, proj_30))
+    proj_90 = max(-60, min(60, proj_90))
+
+    # Direction
+    avg_proj = (proj_15 + proj_30 + proj_90) / 3
+    if avg_proj > 3:
+        direction = "BULLISH"
+    elif avg_proj > 0.5:
+        direction = "MILD BULLISH"
+    elif avg_proj > -0.5:
+        direction = "NEUTRAL"
+    elif avg_proj > -3:
+        direction = "MILD BEARISH"
+    else:
+        direction = "BEARISH"
+
+    # Confidence: how many signals agree?
+    signals_bullish = sum([mom_5 > 0, mom_15 > 0, mom_30 > 0, rsi < 70, bullish_sma, vol_ratio > 1.1, hunter_score >= 65])
+    signals_bearish = sum([mom_5 < 0, mom_15 < 0, mom_30 < 0, rsi > 30, bearish_sma, vol_ratio > 1.1, hunter_score < 50])
+    confidence = max(signals_bullish, signals_bearish) / 7 * 100
+
+    return {
+        "15d": round(proj_15, 1),
+        "30d": round(proj_30, 1),
+        "90d": round(proj_90, 1),
+        "direction": direction,
+        "confidence": round(confidence),
+        "rsi": round(rsi),
+        "vol_ratio": round(vol_ratio, 2),
+        "bullish_sma": bullish_sma,
+        "bearish_sma": bearish_sma,
+    }
+
+
 def _build_row(t, info, hist, enriched=None):
     """Build a single opportunity row from preloaded data."""
     price = safe(info, "currentPrice", "regularMarketPrice", default=0)
@@ -5952,14 +6064,19 @@ def _build_row(t, info, hist, enriched=None):
     elif thesis_obj.get("investment_thesis"):
         inv = thesis_obj["investment_thesis"]
         one_sentence = inv.split(".")[0] + "." if "." in inv else inv[:120]
-    target = safe(info, "targetMeanPrice", default=price)
-    expected_ret = ((target - price) / price * 100) if price and target else 0
     mom_15 = 0
     if len(hist) >= 15:
         mom_15 = (hist["Close"].iloc[-1] - hist["Close"].iloc[-15]) / hist["Close"].iloc[-15] * 100
     mom_5 = 0
     if len(hist) >= 5:
         mom_5 = (hist["Close"].iloc[-1] - hist["Close"].iloc[-5]) / hist["Close"].iloc[-5] * 100
+
+    # CFIS 3.0 native projection
+    hs = hunter["hunter_score"]
+    conv_s = hunter.get("conviction", 0) if not isinstance(hunter.get("conviction"), dict) else hunter["conviction"].get("score", 0)
+    crowd_s = hunter.get("crowding", {}).get("score", 0) if isinstance(hunter.get("crowding"), dict) else 100
+    proj = cfis_projection(info, hist, hs, conv_s, crowd_s)
+
     narr = hunter["narrative"]
     return {
         "ticker": t, "name": name, "price": price,
@@ -5973,7 +6090,12 @@ def _build_row(t, info, hist, enriched=None):
         "cm_score": cm["scores"]["overall"],
         "narrative": narr["score"] if isinstance(narr, dict) else narr,
         "mom_15": mom_15, "mom_5": mom_5,
-        "expected_ret": expected_ret,
+        "expected_ret": proj["30d"],
+        "proj_15d": proj["15d"],
+        "proj_30d": proj["30d"],
+        "proj_90d": proj["90d"],
+        "proj_direction": proj["direction"],
+        "proj_confidence": proj["confidence"],
         "is_bottleneck": cm.get("is_bottleneck", False),
         "one_sentence": one_sentence,
         "risk": scores.get("Fortress Balance Sheet", 50),
@@ -6123,7 +6245,12 @@ def render_opportunity_table(rows, count=12, show_thesis=True):
     for i, r in enumerate(rows[:count]):
         sig_c = r["signal_color"]
         conv_c = "#4CAF50" if r["conviction"] >= 65 else ("#FFC107" if r["conviction"] >= 45 else "#f44336")
-        ret_c = "#4CAF50" if r["expected_ret"] >= 0 else "#f44336"
+        p15 = r.get("proj_15d", 0)
+        p30 = r.get("proj_30d", 0)
+        p90 = r.get("proj_90d", 0)
+        p15_c = "#4CAF50" if p15 >= 0 else "#f44336"
+        p30_c = "#4CAF50" if p30 >= 0 else "#f44336"
+        p90_c = "#4CAF50" if p90 >= 0 else "#f44336"
         mom_c = "#4CAF50" if r["mom_15"] >= 0 else "#f44336"
 
         bn_badge = ""
@@ -6163,9 +6290,17 @@ def render_opportunity_table(rows, count=12, show_thesis=True):
             '<div style="font-size:14px;font-weight:700;color:#e8ecf4">$' + f"{r['price']:.2f}" + '</div>'
             '<div style="font-size:9px;color:#8a9bb5">PRICE</div>'
             '</div>'
-            '<div style="min-width:60px;text-align:center">'
-            '<div style="font-size:14px;font-weight:700;color:' + ret_c + '">' + f"{r['expected_ret']:+.0f}%" + '</div>'
-            '<div style="font-size:9px;color:#8a9bb5">ANALYST TARGET</div>'
+            '<div style="min-width:50px;text-align:center">'
+            '<div style="font-size:13px;font-weight:700;color:' + p15_c + '">' + f"{p15:+.1f}%" + '</div>'
+            '<div style="font-size:8px;color:#8a9bb5">CFIS 15D</div>'
+            '</div>'
+            '<div style="min-width:50px;text-align:center">'
+            '<div style="font-size:13px;font-weight:700;color:' + p30_c + '">' + f"{p30:+.1f}%" + '</div>'
+            '<div style="font-size:8px;color:#8a9bb5">CFIS 30D</div>'
+            '</div>'
+            '<div style="min-width:50px;text-align:center">'
+            '<div style="font-size:13px;font-weight:700;color:' + p90_c + '">' + f"{p90:+.1f}%" + '</div>'
+            '<div style="font-size:8px;color:#8a9bb5">CFIS 90D</div>'
             '</div>'
             '<div style="min-width:70px;text-align:center">'
             '<div style="font-size:14px;font-weight:700;color:' + mom_c + '">' + f"{r['mom_15']:+.1f}%" + '</div>'
@@ -6254,14 +6389,12 @@ def fetch_top30():
             cfis  = cfis_composite(scores)
             opp   = opportunity_score(cfis, info, hist)
 
-            # 30-day and 90-day outlook
-            outlooks = generate_outlooks(info, hist, cfis)
-            o30  = outlooks.get("30 Day",  {})
-            o90  = outlooks.get("90 Day",  {})
-            p30  = o30.get("price", 0)
-            p90  = o90.get("price", 0)
-            pct30 = o30.get("pct", 0)
-            pct90 = o90.get("pct", 0)
+            # CFIS 3.0 native projections
+            proj = cfis_projection(info, hist, cfis, opp, 50)
+            pct30 = proj["30d"]
+            pct90 = proj["90d"]
+            p30 = price * (1 + pct30 / 100) if price else 0
+            p90 = price * (1 + pct90 / 100) if price else 0
 
             # Louis verdict
             dims       = louis_intuition_engine(info, hist, t, None, None)
@@ -6279,8 +6412,8 @@ def fetch_top30():
                 "Louis Pick":     verdict,
                 "CFIS-X":         cfis,
                 "Opportunity":    opp,
-                "30D Target":     f"${p30:.2f} ({pct30:+.1f}%)" if p30 else "N/A",
-                "90D Target":     f"${p90:.2f} ({pct90:+.1f}%)" if p90 else "N/A",
+                "CFIS 30D":       f"${p30:.2f} ({pct30:+.1f}%)" if p30 else "N/A",
+                "CFIS 90D":       f"${p90:.2f} ({pct90:+.1f}%)" if p90 else "N/A",
                 "Econ. Moat":     scores["Economic Moat"],
                 "Rev. Quality":   scores["Revenue Quality"],
                 "Fin. Fortress":  scores["Fortress Balance Sheet"],
@@ -7437,14 +7570,14 @@ elif page == "2️⃣ Capital Migration":
                     "Opportunity", min_value=0, max_value=100, format="%d",
                     help="How attractive the current entry point is"
                 ),
-                "30D Target":   st.column_config.TextColumn(
-                    "⚠️ 30D Scenario",
-                    help="30-day price scenario — signal-based estimate, not a prediction",
+                "CFIS 30D":   st.column_config.TextColumn(
+                    "CFIS 30D Proj",
+                    help="30-day CFIS projection — momentum + conviction + crowding model",
                     width="medium"
                 ),
-                "90D Target":   st.column_config.TextColumn(
-                    "⚠️ 90D Scenario",
-                    help="90-day price scenario — signal-based estimate, not a prediction",
+                "CFIS 90D":   st.column_config.TextColumn(
+                    "CFIS 90D Proj",
+                    help="90-day CFIS projection — momentum + conviction + crowding model",
                     width="medium"
                 ),
                 "Econ. Moat": st.column_config.ProgressColumn(
@@ -7574,7 +7707,7 @@ elif page == "3️⃣ Opportunity Engine":
     st.markdown("""
     <div style="background:#111827;border:1px solid #2e3550;border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:11px;color:#8a9bb5;line-height:1.7">
         <strong style="color:#FFC107">📊 Where do the numbers come from?</strong>
-        <strong>Analyst Target %</strong> = Wall Street consensus target price from Yahoo Finance (real analyst estimates, not our model).
+        <strong>CFIS 15D / 30D / 90D</strong> = CFIS 3.0 native projections — built from real momentum (5D/15D/30D), RSI mean reversion, SMA alignment, volume confirmation, conviction multiplier, and crowding fade. This is our model, not Wall Street.
         <strong>15D Momentum %</strong> = actual price change over the last 15 trading days (real market data).
         <strong>Conviction</strong> = our CFIS-X composite score based on 18 theories + multi-source data.
         <strong>Signal</strong> = CFIS-X action recommendation. All prices are real-time from Yahoo Finance.
@@ -7650,7 +7783,7 @@ elif page == "3️⃣ Opportunity Engine":
                 f'<div style="font-size:11px;color:#8a9bb5;margin-top:4px">Sectors: {sectors_hit}</div>'
                 f'</div>'
                 f'<div style="text-align:right">'
-                f'<div style="font-size:11px;color:#8a9bb5">Combined Avg Return Target</div>'
+                f'<div style="font-size:11px;color:#8a9bb5">CFIS Avg Projection</div>'
                 f'<div style="font-size:14px;color:#4CAF50;font-weight:700">30D: {c30:+.1f}%</div>'
                 f'<div style="font-size:22px;color:{c90_color};font-weight:900">90D: {c90:+.1f}%</div>'
                 f'</div>'
@@ -7675,10 +7808,10 @@ elif page == "3️⃣ Opportunity Engine":
                     f'<div style="font-size:9px;color:#8a9bb5">Conviction</div></div>'
                     f'<div style="min-width:70px;text-align:center">'
                     f'<div style="font-size:13px;font-weight:700;color:#4CAF50">{c["pct30"]:+.1f}%</div>'
-                    f'<div style="font-size:9px;color:#8a9bb5">30D Target</div></div>'
+                    f'<div style="font-size:9px;color:#8a9bb5">CFIS 30D</div></div>'
                     f'<div style="min-width:70px;text-align:center">'
                     f'<div style="font-size:15px;font-weight:800;color:#4CAF50">{c["pct90"]:+.1f}%</div>'
-                    f'<div style="font-size:9px;color:#8a9bb5">90D Target</div></div>'
+                    f'<div style="font-size:9px;color:#8a9bb5">CFIS 90D</div></div>'
                     f'<div style="min-width:70px;text-align:center">'
                     f'<div style="font-size:13px;font-weight:700;color:{mom_c}">{c["mom15"]:+.1f}%</div>'
                     f'<div style="font-size:9px;color:#8a9bb5">15D Momentum</div></div>'
@@ -7717,7 +7850,7 @@ elif page == "3️⃣ Opportunity Engine":
                 f'<div style="font-size:11px;color:#8a9bb5;margin-top:4px">Sectors: {put_sectors}</div>'
                 f'</div>'
                 f'<div style="text-align:right">'
-                f'<div style="font-size:11px;color:#8a9bb5">Combined Avg Downside Target</div>'
+                f'<div style="font-size:11px;color:#8a9bb5">CFIS Avg Downside Proj</div>'
                 f'<div style="font-size:14px;color:#f44336;font-weight:700">30D: {p30:+.1f}%</div>'
                 f'<div style="font-size:22px;color:{p90_color};font-weight:900">90D: {p90:+.1f}%</div>'
                 f'</div>'
@@ -7741,10 +7874,10 @@ elif page == "3️⃣ Opportunity Engine":
                     f'<div style="font-size:9px;color:#8a9bb5">Conviction</div></div>'
                     f'<div style="min-width:70px;text-align:center">'
                     f'<div style="font-size:13px;font-weight:700;color:#f44336">{c["pct30"]:+.1f}%</div>'
-                    f'<div style="font-size:9px;color:#8a9bb5">30D Target</div></div>'
+                    f'<div style="font-size:9px;color:#8a9bb5">CFIS 30D</div></div>'
                     f'<div style="min-width:70px;text-align:center">'
                     f'<div style="font-size:15px;font-weight:800;color:#f44336">{c["pct90"]:+.1f}%</div>'
-                    f'<div style="font-size:9px;color:#8a9bb5">90D Target</div></div>'
+                    f'<div style="font-size:9px;color:#8a9bb5">CFIS 90D</div></div>'
                     f'<div style="min-width:70px;text-align:center">'
                     f'<div style="font-size:13px;font-weight:700;color:{mom_c}">{c["mom15"]:+.1f}%</div>'
                     f'<div style="font-size:9px;color:#8a9bb5">15D Momentum</div></div>'
@@ -8740,7 +8873,7 @@ elif page == "6️⃣ Hunter Command by Louis Teo":
                         <div style="min-width:50px;text-align:center">CAP</div>
                         <div style="min-width:50px;text-align:center">FORCE</div>
                         <div style="min-width:50px;text-align:center">TIMING</div>
-                        <div style="min-width:65px;text-align:center">RETURN</div>
+                        <div style="min-width:65px;text-align:center">CFIS 30D</div>
                         <div style="min-width:80px;text-align:center">ACTION</div>
                     </div>
                     """, unsafe_allow_html=True)
