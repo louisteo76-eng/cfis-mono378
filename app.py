@@ -6221,13 +6221,30 @@ TOP_30 = list(TOP_30_WHY.keys())
 
 @st.cache_data(ttl=600, show_spinner=False)
 def fetch_top30():
-    import time
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    def _fetch_one(t):
+        tk = yf.Ticker(t)
+        info = tk.info or {}
+        hist = tk.history(period="1y")
+        return t, info, hist
+
+    prefetched = {}
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        futures = {pool.submit(_fetch_one, t): t for t in TOP_30}
+        for f in as_completed(futures):
+            try:
+                t, info, hist = f.result()
+                prefetched[t] = (info, hist)
+            except Exception:
+                pass
+
     rows = []
-    for i, t in enumerate(TOP_30):
+    for t in TOP_30:
+        if t not in prefetched:
+            continue
         try:
-            tk = yf.Ticker(t)
-            info = tk.info or {}
-            hist = tk.history(period="1y")
+            info, hist = prefetched[t]
             price = safe(info, "currentPrice", "regularMarketPrice", default=0)
             if not price and not hist.empty:
                 price = float(hist["Close"].iloc[-1])
@@ -6271,9 +6288,6 @@ def fetch_top30():
             })
         except Exception:
             pass
-        # Small delay every 5 stocks to avoid rate limit
-        if (i + 1) % 5 == 0:
-            time.sleep(0.5)
     if not rows:
         raise RuntimeError("No stock data fetched — possible rate limit")
     df = pd.DataFrame(rows)
@@ -6933,15 +6947,12 @@ if page == "1️⃣ Market Health":
 
     # Safe pre-fill from quick-analyze buttons
     if "quick_ticker" in st.session_state:
-        st.session_state["selected_ticker"] = st.session_state.pop("quick_ticker")
-    if "selected_ticker" not in st.session_state:
-        st.session_state["selected_ticker"] = ""
+        st.session_state["analyze_ticker"] = st.session_state.pop("quick_ticker")
+    if "analyze_ticker" not in st.session_state:
+        st.session_state["analyze_ticker"] = ""
 
-    # Capture and consume selected_ticker from Analyze buttons
-    direct_ticker = ""
-    if st.session_state["selected_ticker"]:
-        direct_ticker = st.session_state["selected_ticker"]
-        st.session_state["selected_ticker"] = ""
+    # Capture persistent ticker (survives rerun)
+    direct_ticker = st.session_state.get("analyze_ticker", "")
 
     col_s, col_or, col_c, col_b = st.columns([5, 0.5, 2.5, 1])
     with col_s:
@@ -6949,7 +6960,7 @@ if page == "1️⃣ Market Health":
             "Search stocks",
             options=SEARCH_OPTIONS,
             index=0,
-            placeholder="🔍 Search — type name or ticker (e.g. Intel, TSLA, Nvidia)",
+            placeholder="🔍 Search — type name or ticker (e.g. Intel, TSLA, Nvidia, SPY)",
             label_visibility="collapsed",
             key="search_box",
         )
@@ -6957,7 +6968,7 @@ if page == "1️⃣ Market Health":
         st.markdown("<div style='text-align:center;color:#6a7a9a;padding-top:8px;font-size:13px'>or</div>", unsafe_allow_html=True)
     with col_c:
         custom_ticker = st.text_input("Custom ticker",
-                                      placeholder="Any ticker — BABA, SPOT…",
+                                      placeholder="Any ticker — BABA, SPOT, SPY…",
                                       label_visibility="collapsed",
                                       key="custom_text")
     with col_b:
@@ -6975,9 +6986,32 @@ if page == "1️⃣ Market Health":
         if resolved:
             ticker_input = resolved
 
+    # Clear button when analyzing
+    if ticker_input and direct_ticker:
+        if st.button("← Back to Stock Picks", key="clear_analyze"):
+            st.session_state["analyze_ticker"] = ""
+            st.rerun()
+
     if not ticker_input:
         st.markdown("### 👁️ Louis' Standard Picks — by Theme")
         st.caption("These are Louis' pre-set conviction stocks per theme. Click any to analyze.")
+
+        st.markdown("""
+        <div style="background:#111827;border:1px solid #2e3550;border-radius:10px;padding:12px 16px;margin-bottom:12px;font-size:12px;color:#b0bcd4;line-height:1.8">
+            <strong style="color:#FFC107">💡 TIP:</strong> You can search <strong>any publicly traded stock</strong> using the search bar above — type the company name or ticker symbol.
+            Popular indices: <strong>SPY</strong> (S&P 500), <strong>QQQ</strong> (Nasdaq 100), <strong>DIA</strong> (Dow 30), <strong>IWM</strong> (Russell 2000), <strong>SOXX</strong> (Semiconductors).<br>
+            <strong style="color:#FF9800">⚠️ SpaceX</strong> is a private company and not yet publicly traded. When it IPOs, it will be added automatically. For now, <strong>RKLB</strong> (Rocket Lab) is the closest public space launch company.
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Quick S&P 500 index buttons
+        sp_cols = st.columns(6)
+        sp_quick = [("SPY", "S&P 500"), ("QQQ", "Nasdaq 100"), ("DIA", "Dow 30"), ("IWM", "Russell 2K"), ("SOXX", "Semis"), ("XLE", "Energy")]
+        for col_obj, (etf_t, etf_name) in zip(sp_cols, sp_quick):
+            with col_obj:
+                if st.button(f"{etf_t}\n{etf_name}", key=f"sp_{etf_t}", use_container_width=True):
+                    st.session_state["analyze_ticker"] = etf_t
+                    st.rerun()
 
         # Each entry: (ticker, why Louis likes it)
         LOUIS_STANDARD_PICKS = {
@@ -7067,7 +7101,7 @@ if page == "1️⃣ Market Health":
                     </div>
                     """, unsafe_allow_html=True)
                     if st.button(f"Analyze {t}", key=f"lp_{seg}_{t}", use_container_width=True):
-                        st.session_state["selected_ticker"] = t
+                        st.session_state["analyze_ticker"] = t
                         st.rerun()
         st.divider()
 
@@ -7534,6 +7568,16 @@ elif page == "3️⃣ Opportunity Engine":
     <div style="margin-bottom:8px">
         <span style="font-size:32px;font-weight:900;color:#ffffff">🎯 Opportunity Engine™</span><br>
         <span style="font-size:15px;color:#b0bcd4">What should you buy, observe, avoid, or prepare for now?</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div style="background:#111827;border:1px solid #2e3550;border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:11px;color:#8a9bb5;line-height:1.7">
+        <strong style="color:#FFC107">📊 Where do the numbers come from?</strong>
+        <strong>Analyst Target %</strong> = Wall Street consensus target price from Yahoo Finance (real analyst estimates, not our model).
+        <strong>15D Momentum %</strong> = actual price change over the last 15 trading days (real market data).
+        <strong>Conviction</strong> = our CFIS-X composite score based on 18 theories + multi-source data.
+        <strong>Signal</strong> = CFIS-X action recommendation. All prices are real-time from Yahoo Finance.
     </div>
     """, unsafe_allow_html=True)
 
