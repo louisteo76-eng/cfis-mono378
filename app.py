@@ -4057,62 +4057,78 @@ def score_crowding(info, hist, scores, enriched=None):
 
 
 def compute_conviction_score(info, hist, scores, cm, hunter_components):
-    """Separate Conviction Score: measures confidence in the capital flow thesis, not the thesis itself."""
-    s = 30
+    """CFIS 3.0 Conviction Score: Reality + Flow + Risk + Psychology + Execution + Regeneration."""
+    s = 35
     reasons = []
 
     n = hunter_components
     ns, ps, fs, ss, ts, cs, crs = n["narrative"]["score"], n["positioning"]["score"], n["force"]["score"], n["scarcity"]["score"], n["timing"]["score"], n["cap"]["score"], n["crowding"]["score"]
-    high_scores = sum(1 for x in [ns, ps, fs, ss, ts, cs] if x >= 70)
+    high_scores = sum(1 for x in [ns, ps, fs, ss, ts, cs] if x >= 60)
     if high_scores >= 5:
-        s += 15; reasons.append(f"Signal consistency: {high_scores}/6 scores above 70 — multi-dimensional confirmation")
+        s += 18; reasons.append(f"Signal consistency: {high_scores}/6 scores above 60 — multi-dimensional confirmation")
     elif high_scores >= 3:
-        s += 8; reasons.append(f"Moderate signal alignment: {high_scores}/6 scores above 70")
+        s += 10; reasons.append(f"Moderate signal alignment: {high_scores}/6 scores above 60")
+    elif high_scores >= 2:
+        s += 5; reasons.append(f"Partial alignment: {high_scores}/6 scores above 60")
 
+    # Reality pillar — institutional + fundamental evidence
     inst_pct = (info.get("heldPercentInstitutions", 0) or 0)
-    if inst_pct > 0.6:
-        s += 8; reasons.append(f"Institutional confirmation: {inst_pct:.0%} held by institutions")
-    elif inst_pct > 0.3:
-        s += 4
+    if inst_pct > 0.5:
+        s += 8; reasons.append(f"Reality: institutional validation {inst_pct:.0%}")
+    elif inst_pct > 0.2:
+        s += 4; reasons.append(f"Reality: moderate institutional presence {inst_pct:.0%}")
 
+    # Flow pillar — where is capital moving?
     cap_data = n["cap"]
     h_vals = [cap_data.get(k, 0) for k in ("cap_3m", "cap_6m", "cap_12m", "cap_24m") if isinstance(cap_data.get(k), (int, float))]
-    if h_vals and min(h_vals) >= 60:
-        s += 10; reasons.append(f"CAP confirmation: positive probability across all time horizons (min {min(h_vals):.0f}%)")
-    elif h_vals and max(h_vals) >= 80:
-        s += 5; reasons.append(f"CAP partial: strongest horizon at {max(h_vals):.0f}%")
+    if h_vals and min(h_vals) >= 55:
+        s += 12; reasons.append(f"Flow: capital moving in across all horizons (min {min(h_vals):.0f}%)")
+    elif h_vals and max(h_vals) >= 65:
+        s += 7; reasons.append(f"Flow: strongest horizon at {max(h_vals):.0f}%")
+    elif h_vals and max(h_vals) >= 50:
+        s += 4; reasons.append(f"Flow: emerging capital interest (best {max(h_vals):.0f}%)")
 
     cm_overall = cm.get("scores", {}).get("overall", 0)
-    if cm_overall >= 70:
-        s += 8; reasons.append(f"Capital Migration Engine confirms thesis: {cm_overall:.0f}/100")
-    elif cm_overall >= 50:
+    if cm_overall >= 60:
+        s += 8; reasons.append(f"Flow: Capital Migration confirms {cm_overall:.0f}/100")
+    elif cm_overall >= 45:
         s += 4
 
-    if ts >= 70 and fs >= 70:
-        s += 8; reasons.append("Catalyst confirmation: timing + force both strong — entry window active")
-    elif ts >= 60:
+    # Execution pillar — timing + force = can we act?
+    if ts >= 60 and fs >= 60:
+        s += 10; reasons.append("Execution: timing + force aligned — entry window active")
+    elif ts >= 50 and fs >= 50:
+        s += 5; reasons.append("Execution: timing and force building")
+    elif ts >= 50:
         s += 3
 
+    # Reality pillar — revenue + earnings evidence
     rev_g = info.get("revenueGrowth", 0) or 0
     earn_g = info.get("earningsGrowth", 0) or 0
-    if rev_g > 0.2 and earn_g > 0.2:
-        s += 6; reasons.append(f"Fundamental confirmation: revenue {rev_g:.0%} + earnings {earn_g:.0%} growth")
-    elif rev_g > 0.1:
+    if rev_g > 0.15 and earn_g > 0.15:
+        s += 7; reasons.append(f"Reality: revenue {rev_g:.0%} + earnings {earn_g:.0%} growth")
+    elif rev_g > 0.08:
+        s += 4; reasons.append(f"Reality: revenue growing {rev_g:.0%}")
+
+    # Psychology pillar — contrarian opportunity (Reality ≠ Public Belief)
+    if crs < 40 and ns >= 60:
+        s += 6; reasons.append("Psychology: low crowding + strong narrative — contrarian opportunity")
+    elif crs < 50:
         s += 3
 
     if cm.get("is_bottleneck"):
-        s += 5; reasons.append("Bottleneck asset — structurally scarce in its theme")
+        s += 5; reasons.append("Scarcity: bottleneck asset — structurally scarce in its theme")
 
     analyst_count = info.get("numberOfAnalystOpinions", 0) or 0
     rec = info.get("recommendationMean", 3) or 3
-    if analyst_count >= 10 and rec <= 2.0:
-        s += 5; reasons.append(f"Analyst consensus strong: {analyst_count} analysts, mean rec {rec:.1f}")
+    if analyst_count >= 8 and rec <= 2.2:
+        s += 5; reasons.append(f"Reality: analyst consensus {analyst_count} analysts, mean {rec:.1f}")
 
     if len(hist) >= 60:
         vol_recent = hist["Volume"].iloc[-20:].mean()
         vol_prior = hist["Volume"].iloc[-60:-20].mean()
-        if vol_prior > 0 and vol_recent > vol_prior * 1.3:
-            s += 5; reasons.append("Volume confirmation: recent 20-day average 30%+ above prior period")
+        if vol_prior > 0 and vol_recent > vol_prior * 1.2:
+            s += 5; reasons.append("Flow: volume surge — 20%+ above prior period")
 
     return {"score": max(0, min(100, s)), "reasons": reasons}
 
@@ -4142,11 +4158,12 @@ def compute_hunter(info, hist, scores, cm, enriched=None):
                   "scarcity": scarcity, "timing": timing, "cap": cap, "crowding": crowding}
     conviction = compute_conviction_score(info, hist, scores, cm, components)
 
-    # CALIBRATION TARGETS: 90-100 top 1%, 85-90 top 5%, 80-85 top 10%, 60-75 average, <60 weak
-    if hunter_score >= 90: classification = "High Conviction"
-    elif hunter_score >= 85: classification = "Watch Closely"
-    elif hunter_score >= 80: classification = "Monitor"
-    elif hunter_score >= 60: classification = "Average"
+    # CFIS 3.0 CALIBRATION — "Act at 70% conviction"
+    # 85+ = ATTACK, 75-84 = COMMIT, 65-74 = PILOT, <65 = PASS
+    if hunter_score >= 85: classification = "Attack Zone"
+    elif hunter_score >= 75: classification = "Commit Zone"
+    elif hunter_score >= 65: classification = "Pilot Zone"
+    elif hunter_score >= 50: classification = "Monitor"
     else: classification = "Weak"
 
     hs = hunter_score
@@ -4157,34 +4174,43 @@ def compute_hunter(info, hist, scores, cm, enriched=None):
     crowding_s = crowding["score"]
     dq = enriched.get("data_quality", 0)
 
-    if hs >= 95 and conv >= 90 and cap_s >= 90 and force_s >= 90 and timing_s >= 85:
+    # Louis Override: "Can I survive if it fails?" — survivability check
+    mc = safe(info, "marketCap", default=0) or 0
+    total_cash = safe(info, "totalCash", default=0) or 0
+    total_debt = safe(info, "totalDebt", default=0) or 0
+    survivable = mc > 2e9 or total_cash > total_debt * 0.5 or total_debt == 0
+    louis_override = survivable
+
+    # CFIS 3.0 Action Engine — aligned with "Act at 70% Conviction"
+    if hs >= 85 and conv >= 75 and cap_s >= 75 and force_s >= 75 and timing_s >= 65 and louis_override:
         action = "STRONG GO"
         action_color = "#00E676"
         action_icon = "⚡"
-        action_desc = "Maximum conviction. All engines aligned. Capital flow confirmed. Timing locked. Deploy capital."
-    elif hs >= 90 and conv >= 80 and cap_s >= 85 and force_s >= 80 and timing_s >= 75:
+        action_desc = "ATTACK zone. Reality + Flow + Risk aligned. Capital flow confirmed. Act now."
+    elif hs >= 75 and conv >= 65 and cap_s >= 65 and force_s >= 65 and timing_s >= 55 and louis_override:
         action = "GO"
         action_color = "#4CAF50"
         action_icon = "🔥"
-        action_desc = "High conviction. Capital flow confirmed. Timing aligned. Enter position."
-    elif hs >= 80:
+        action_desc = "COMMIT zone. 70%+ conviction reached. Flow confirmed. Enter position."
+    elif hs >= 65:
         wait_reasons = []
-        if timing_s < 75: wait_reasons.append("Timing not mature")
-        if conv < 80: wait_reasons.append("Conviction needs confirmation")
-        if force_s < 80: wait_reasons.append("Force insufficient")
-        if cap_s < 85: wait_reasons.append("Capital flow not fully confirmed")
+        if timing_s < 55: wait_reasons.append("Timing not mature")
+        if conv < 65: wait_reasons.append("Conviction building")
+        if force_s < 65: wait_reasons.append("Force needs confirmation")
+        if cap_s < 65: wait_reasons.append("Capital flow emerging")
         if crowding_s >= 70: wait_reasons.append("Crowding elevated")
-        action = "WAIT"
+        if not louis_override: wait_reasons.append("Survivability risk — weak balance sheet")
+        action = "PILOT"
         action_color = "#FFC107"
         action_icon = "🟡"
-        action_desc = "Future opportunity. " + ". ".join(wait_reasons) + "."
+        action_desc = "PILOT zone. Test with small allocation. " + ". ".join(wait_reasons) + "."
     else:
         action = "PASS"
         action_color = "#78909C"
         action_icon = "❌"
-        action_desc = "Insufficient conviction. Capital not migrating here."
+        action_desc = "Below 65% conviction. Reality not confirmed. Move on."
 
-    hunt_alert = (cap_s >= 90 and force_s >= 90 and timing_s >= 85 and conv >= 90 and crowding_s < 60)
+    hunt_alert = (cap_s >= 75 and force_s >= 75 and timing_s >= 65 and conv >= 75 and crowding_s < 60)
 
     return {
         "narrative": narrative, "positioning": positioning, "force": force,
@@ -4199,37 +4225,37 @@ def compute_hunter(info, hist, scores, cm, enriched=None):
 
 
 def check_hunter_calibration(rows):
-    """Check if Hunter Engine scoring is overly restrictive. Returns warning dict or None."""
+    """CFIS 3.0 calibration check. Expects: ~5% above 85 (ATTACK), ~15% above 75 (COMMIT), ~30% above 65 (PILOT)."""
     if not rows:
         return None
     hunter_scores = sorted([r.get("conviction", r.get("hunter_score", 0)) for r in rows], reverse=True)
     max_score = hunter_scores[0] if hunter_scores else 0
     above_85 = sum(1 for s in hunter_scores if s >= 85)
-    above_80 = sum(1 for s in hunter_scores if s >= 80)
-    above_60 = sum(1 for s in hunter_scores if s >= 60)
+    above_75 = sum(1 for s in hunter_scores if s >= 75)
+    above_65 = sum(1 for s in hunter_scores if s >= 65)
     total = len(hunter_scores)
     avg = sum(hunter_scores) / total if total else 0
 
     warnings = []
-    if max_score < 85:
-        warnings.append(f"Highest score in universe is {max_score:.0f} — no stock qualifies as Watch Closely or above")
-    if total > 20 and above_85 / total < 0.01:
-        warnings.append(f"Only {above_85}/{total} stocks ({above_85/total*100:.1f}%) above 85 — expected ~5%")
-    if total > 20 and above_80 / total < 0.03:
-        warnings.append(f"Only {above_80}/{total} stocks above 80 — expected ~10%")
-    if avg < 50:
-        warnings.append(f"Average score {avg:.0f} — expected 60-75 range")
+    if max_score < 75:
+        warnings.append(f"Highest score is {max_score:.0f} — no stock reaches COMMIT zone (75+)")
+    if total > 20 and above_75 / total < 0.03:
+        warnings.append(f"Only {above_75}/{total} stocks above 75 — expected ~15%")
+    if total > 20 and above_65 / total < 0.08:
+        warnings.append(f"Only {above_65}/{total} stocks above 65 — expected ~30%")
+    if avg < 45:
+        warnings.append(f"Average score {avg:.0f} — expected 55-70 range")
     if avg > 80:
-        warnings.append(f"Average score {avg:.0f} — scoring too generous, expected 60-75")
+        warnings.append(f"Average score {avg:.0f} — scoring too generous, expected 55-70")
 
     if warnings:
         return {
-            "is_restrictive": max_score < 85,
+            "is_restrictive": max_score < 75,
             "is_generous": avg > 80,
             "max_score": max_score,
             "avg_score": avg,
             "above_85": above_85,
-            "above_80": above_80,
+            "above_75": above_75,
             "total": total,
             "warnings": warnings,
         }
@@ -8092,11 +8118,11 @@ elif page == "4️⃣ Portfolio Commander":
 
         total_conviction = sum(p["conviction"] for p in picks)
         for i, p in enumerate(picks):
-            if p["conviction"] >= 80:
+            if p["conviction"] >= 75:
                 raw_wt = 12
-            elif p["conviction"] >= 70:
+            elif p["conviction"] >= 65:
                 raw_wt = 7
-            elif p["conviction"] >= 60:
+            elif p["conviction"] >= 55:
                 raw_wt = 4
             else:
                 raw_wt = 2
@@ -8169,7 +8195,7 @@ elif page == "5️⃣ Validation Engine":
             conv_filter = st.radio("Filter by Conviction", ["All", "80+ (Attack)", "60-79 (Accumulate)", "50-59 (Observe)", "Below 50 (Avoid)"], horizontal=True, key="val_conv_filter")
 
             if conv_filter == "80+ (Attack)":
-                filtered_rows = [r for r in val_rows if r["conviction"] >= 80]
+                filtered_rows = [r for r in val_rows if r["conviction"] >= 70]
             elif conv_filter == "60-79 (Accumulate)":
                 filtered_rows = [r for r in val_rows if 60 <= r["conviction"] < 80]
             elif conv_filter == "50-59 (Observe)":
@@ -8497,11 +8523,11 @@ elif page == "6️⃣ Hunter Command by Louis Teo":
 
     st.markdown("""
     <div style="background:linear-gradient(135deg,#0a0a1e,#0a1a2e);border:1px solid #06b6d4;border-radius:14px;padding:20px;margin-bottom:16px">
-        <div style="font-size:12px;color:#06b6d4;letter-spacing:2px;font-weight:700;margin-bottom:8px">CIO PHILOSOPHY</div>
+        <div style="font-size:12px;color:#06b6d4;letter-spacing:2px;font-weight:700;margin-bottom:8px">CFIS 3.0 — LOUIS TEO OPERATING SYSTEM</div>
         <div style="font-size:13px;color:#e8ecf4;line-height:2.0">
-            Don't ask "Is this a good company?"<br>
-            Ask: "Will large amounts of capital flow into this asset within the next 3, 6, 12 and 24 months?"<br>
-            The system favors patience over activity. If nothing qualifies — that is the correct answer.
+            See Reality Clearly. Follow The Flow. Respect Risk. Act At 70% Conviction.<br>
+            Don't ask "Is this a good company?" Ask: "Is the reality positive, is the flow confirmed, can I survive if it fails?"<br>
+            A good decision today beats a perfect decision next year. If conviction ≥ 70% — <strong style="color:#4CAF50">ACT.</strong>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -8509,16 +8535,16 @@ elif page == "6️⃣ Hunter Command by Louis Teo":
     st.markdown("""
     <div style="background:#161b27;border-radius:10px;padding:14px;margin-bottom:16px;display:flex;gap:20px;flex-wrap:wrap;justify-content:center;align-items:center">
         <div style="display:flex;gap:14px;align-items:center">
-            <div style="text-align:center"><div style="background:#00E676;color:#000;font-weight:900;font-size:11px;padding:4px 14px;border-radius:12px">⚡ STRONG GO</div><div style="font-size:9px;color:#8a9bb5;margin-top:3px">Max 7</div></div>
-            <div style="text-align:center"><div style="background:#4CAF50;color:#000;font-weight:900;font-size:11px;padding:4px 14px;border-radius:12px">🔥 GO</div><div style="font-size:9px;color:#8a9bb5;margin-top:3px">Max 7</div></div>
-            <div style="text-align:center"><div style="background:#FFC107;color:#000;font-weight:900;font-size:11px;padding:4px 14px;border-radius:12px">🟡 WAIT</div><div style="font-size:9px;color:#8a9bb5;margin-top:3px">Top 20</div></div>
-            <div style="text-align:center"><div style="background:#78909C;color:#000;font-weight:900;font-size:11px;padding:4px 14px;border-radius:12px">❌ PASS</div><div style="font-size:9px;color:#8a9bb5;margin-top:3px">Ignore</div></div>
+            <div style="text-align:center"><div style="background:#00E676;color:#000;font-weight:900;font-size:11px;padding:4px 14px;border-radius:12px">⚡ STRONG GO</div><div style="font-size:9px;color:#8a9bb5;margin-top:3px">ATTACK</div></div>
+            <div style="text-align:center"><div style="background:#4CAF50;color:#000;font-weight:900;font-size:11px;padding:4px 14px;border-radius:12px">🔥 GO</div><div style="font-size:9px;color:#8a9bb5;margin-top:3px">COMMIT</div></div>
+            <div style="text-align:center"><div style="background:#FFC107;color:#000;font-weight:900;font-size:11px;padding:4px 14px;border-radius:12px">🟡 PILOT</div><div style="font-size:9px;color:#8a9bb5;margin-top:3px">Test Position</div></div>
+            <div style="text-align:center"><div style="background:#78909C;color:#000;font-weight:900;font-size:11px;padding:4px 14px;border-radius:12px">❌ PASS</div><div style="font-size:9px;color:#8a9bb5;margin-top:3px">Move On</div></div>
         </div>
         <div style="border-left:1px solid #3a4460;padding-left:16px">
             <div style="font-size:10px;color:#8a9bb5;line-height:1.8">
-                <span style="color:#00E676;font-weight:700">STRONG GO:</span> Hunter&gt;95 + Conv&gt;90 + CAP&gt;90 + Force&gt;90 + Timing&gt;85<br>
-                <span style="color:#4CAF50;font-weight:700">GO:</span> Hunter&gt;90 + Conv&gt;80 + CAP&gt;85 + Force&gt;80 + Timing&gt;75<br>
-                <span style="color:#FFC107;font-weight:700">WAIT:</span> Hunter&gt;80 but lacking Timing, Catalyst, Force or CAP confirmation
+                <span style="color:#00E676;font-weight:700">STRONG GO:</span> Hunter&gt;85 + Conv&gt;75 + CAP&gt;75 + Force&gt;75 + Survivable<br>
+                <span style="color:#4CAF50;font-weight:700">GO:</span> Hunter&gt;75 + Conv&gt;65 + CAP&gt;65 + Force&gt;65 + Survivable<br>
+                <span style="color:#FFC107;font-weight:700">PILOT:</span> Hunter&gt;65 — test with small allocation, conviction building
             </div>
         </div>
     </div>
@@ -8602,7 +8628,7 @@ elif page == "6️⃣ Hunter Command by Louis Teo":
                 all_sorted = sorted(all_opps, key=lambda x: x["conviction"], reverse=True)
 
                 go_stocks = [r for r in all_sorted if r.get("action") in ("STRONG GO", "GO")][:7]
-                wait_stocks = [r for r in all_sorted if r.get("action") == "WAIT"][:20]
+                wait_stocks = [r for r in all_sorted if r.get("action") == "PILOT"][:20]
                 top50 = all_sorted[:50]
 
                 cal = check_hunter_calibration(all_sorted)
@@ -8611,7 +8637,7 @@ elif page == "6️⃣ Hunter Command by Louis Teo":
                     <div style="background:linear-gradient(135deg,#2a1a0a,#3a2a0a);border:2px solid #FF9800;border-radius:14px;padding:20px;margin:12px 0">
                         <div style="font-size:14px;font-weight:900;color:#FF9800;letter-spacing:2px;text-align:center">⚠️ HUNTER ENGINE OVERLY RESTRICTIVE</div>
                         <div style="font-size:12px;color:#FFB74D;text-align:center;margin-top:8px;line-height:1.8">
-                            Highest score in universe: <strong>{cal['max_score']:.0f}</strong> · Average: <strong>{cal['avg_score']:.0f}</strong> · Above 85: <strong>{cal['above_85']}/{cal['total']}</strong><br>
+                            Highest score: <strong>{cal['max_score']:.0f}</strong> · Average: <strong>{cal['avg_score']:.0f}</strong> · Above 75 (COMMIT): <strong>{cal.get('above_75',0)}/{cal['total']}</strong><br>
                             {'<br>'.join(cal['warnings'])}
                         </div>
                         <div style="font-size:11px;color:#8a9bb5;text-align:center;margin-top:8px">
@@ -8623,7 +8649,7 @@ elif page == "6️⃣ Hunter Command by Louis Teo":
                 elif cal and cal.get("is_generous"):
                     st.markdown(f"""
                     <div style="background:linear-gradient(135deg,#0a1a2a,#0a2a3a);border:2px solid #4FC3F7;border-radius:14px;padding:16px;margin:12px 0">
-                        <div style="font-size:12px;font-weight:700;color:#4FC3F7;letter-spacing:2px;text-align:center">CALIBRATION NOTE: Average score {cal['avg_score']:.0f} above expected 60-75 range. Scoring may be too generous.</div>
+                        <div style="font-size:12px;font-weight:700;color:#4FC3F7;letter-spacing:2px;text-align:center">CALIBRATION NOTE: Average score {cal['avg_score']:.0f} above expected 55-70 range. Scoring may be too generous.</div>
                     </div>
                     """, unsafe_allow_html=True)
 
@@ -8638,17 +8664,17 @@ elif page == "6️⃣ Hunter Command by Louis Teo":
                 if not go_stocks:
                     max_hs = max(r["conviction"] for r in all_sorted) if all_sorted else 0
                     avg_hs = sum(r["conviction"] for r in all_sorted) / len(all_sorted) if all_sorted else 0
-                    if max_hs < 70:
+                    if max_hs < 60:
                         mkt_cond = "BEAR / RISK-OFF MARKET"
-                        mkt_desc = "No stock in the universe scores above 70. Capital is leaving risk assets. This is a stay-in-cash environment."
+                        mkt_desc = "No stock reaches 60. Capital is leaving risk assets. Stay in cash — this is CFIS 3.0 discipline."
                         mkt_color = "#f44336"
-                    elif max_hs < 80:
+                    elif max_hs < 70:
                         mkt_cond = "BORING / CONSOLIDATING MARKET"
-                        mkt_desc = "Top stocks score 70-80 but lack conviction. Market is consolidating — no clear direction yet. Watch for breakouts."
+                        mkt_desc = "Top stocks score 60-70 but lack conviction. Market is consolidating. Watch for PILOT zone entries."
                         mkt_color = "#FFC107"
                     else:
                         mkt_cond = "EMERGING OPPORTUNITIES"
-                        mkt_desc = "Some stocks near WAIT threshold. Catalysts forming but timing not confirmed. Stay alert."
+                        mkt_desc = "Stocks nearing COMMIT zone (75+). Flow building. Catalysts forming. Stay alert for GO signals."
                         mkt_color = "#29B6F6"
                     st.markdown(f"""
                     <div style="background:#161b27;border:1px solid #3a4460;border-radius:12px;padding:30px;text-align:center;margin:10px 0">
@@ -8701,16 +8727,16 @@ elif page == "6️⃣ Hunter Command by Louis Teo":
                 # ── SECTION 2: PATIENCE ZONE ──────────────────
                 st.markdown("""
                 <div style="background:linear-gradient(135deg,#1a1a0a,#2a2a0a);border:2px solid #FFC107;border-radius:16px;padding:20px;margin:16px 0">
-                    <div style="font-size:14px;font-weight:900;color:#FFC107;letter-spacing:3px;text-align:center">🟡 PATIENCE ZONE — FUTURE OPPORTUNITIES</div>
-                    <div style="font-size:11px;color:#FFD54F;text-align:center;margin-top:4px">Maximum 20 stocks. Thesis strong but timing, conviction, or capital flow not fully confirmed.</div>
+                    <div style="font-size:14px;font-weight:900;color:#FFC107;letter-spacing:3px;text-align:center">🟡 PILOT ZONE — TEST WITH SMALL ALLOCATION</div>
+                    <div style="font-size:11px;color:#FFD54F;text-align:center;margin-top:4px">Top 20 stocks. Hunter 65+. Conviction building — test, observe, small allocation. CFIS 3.0 says: pilot before you commit.</div>
                 </div>
                 """, unsafe_allow_html=True)
 
                 if not wait_stocks:
-                    st.info("No stocks in WAIT zone.")
+                    st.info("No stocks in PILOT zone. Market conviction below 65% across the board.")
                 else:
                     for r in wait_stocks:
-                        wait_reason = r.get("action_desc", "Awaiting catalyst confirmation")
+                        wait_reason = r.get("action_desc", "Conviction building — test with small allocation")
                         st.markdown(f"""
                         <div style="display:flex;gap:8px;padding:10px 12px;background:#1a1a0a;border:1px solid #33291a;border-radius:8px;margin-bottom:4px;align-items:center">
                             <div style="min-width:60px;font-size:14px;font-weight:800;color:#ffffff">{r['ticker']}</div>
@@ -8718,7 +8744,7 @@ elif page == "6️⃣ Hunter Command by Louis Teo":
                             <div style="min-width:45px;text-align:center;font-size:14px;font-weight:700;color:#FFC107">{r.get('conviction_score',0):.0f}</div>
                             <div style="flex:1;font-size:11px;color:#b0a87a">{r['name']} — {r.get('theme_icon','')} {r.get('theme','')}</div>
                             <div style="font-size:11px;color:#FFD54F;max-width:300px">{wait_reason}</div>
-                            <div style="min-width:40px;text-align:center"><span style="background:#FFC107;color:#000;font-weight:900;font-size:10px;padding:3px 8px;border-radius:10px">WAIT</span></div>
+                            <div style="min-width:40px;text-align:center"><span style="background:#FFC107;color:#000;font-weight:900;font-size:10px;padding:3px 8px;border-radius:10px">PILOT</span></div>
                         </div>
                         """, unsafe_allow_html=True)
 
@@ -8749,11 +8775,11 @@ elif page == "6️⃣ Hunter Command by Louis Teo":
 
                 for i, r in enumerate(top50, 1):
                     hs_val = r["conviction"]
-                    hc = "#00E676" if hs_val >= 95 else ("#4CAF50" if hs_val >= 90 else ("#FFC107" if hs_val >= 80 else "#78909C"))
+                    hc = "#00E676" if hs_val >= 85 else ("#4CAF50" if hs_val >= 75 else ("#FFC107" if hs_val >= 65 else "#78909C"))
                     act = r.get("action", "PASS")
                     act_c = r.get("action_color", "#78909C")
                     is_go = act in ("STRONG GO", "GO")
-                    bg = "#0a1a0a" if is_go else ("#1a1a0a" if act == "WAIT" else "#0d1117")
+                    bg = "#0a1a0a" if is_go else ("#1a1a0a" if act == "PILOT" else "#0d1117")
                     act_label = "⚡ S-GO" if act == "STRONG GO" else act
                     st.markdown(f"""
                     <div style="display:flex;gap:6px;padding:6px 12px;background:{bg};border-radius:6px;margin-bottom:2px;align-items:center;border-left:3px solid {act_c}">
@@ -8885,7 +8911,7 @@ elif page == "6️⃣ Hunter Command by Louis Teo":
             with st.spinner("Scanning Smart Money Pressure for top-rated stocks…"):
                 try:
                     all_opps = scan_opportunities(tuple(FULL_UNIVERSE))
-                    top_tickers = [r["ticker"] for r in sorted(all_opps, key=lambda x: x["conviction"], reverse=True) if r.get("action") in ("STRONG GO", "GO", "WAIT")][:15]
+                    top_tickers = [r["ticker"] for r in sorted(all_opps, key=lambda x: x["conviction"], reverse=True) if r.get("action") in ("STRONG GO", "GO", "PILOT")][:15]
                     if not top_tickers:
                         top_tickers = [r["ticker"] for r in sorted(all_opps, key=lambda x: x["conviction"], reverse=True)][:10]
 
