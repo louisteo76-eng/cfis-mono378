@@ -6361,6 +6361,16 @@ TOP_30_WHY = {
     "AI":    "C3.ai. Enterprise AI applications across energy, defense, and manufacturing.",
     "IONQ":  "Quantum computing. Early stage but the compute paradigm after classical silicon.",
     "QBTS":  "D-Wave quantum. Annealing quantum computers solving real logistics problems now.",
+    "LLY":   "GLP-1 weight loss drugs. Mounjaro/Zepbound are the biggest pharma opportunity in decades.",
+    "UNH":   "Largest US health insurer. Data + scale moat. Recurring revenue machine.",
+    "V":     "Visa. Toll booth on 65% of global card transactions. AI fraud detection.",
+    "MA":    "Mastercard. Payment network duopoly with Visa. Cross-border and fintech growth.",
+    "JPM":   "Largest US bank. Jamie Dimon. Trading + lending + payments. AI-first banking.",
+    "COST":  "Costco. Membership flywheel + pricing power. Consumer staple that grows.",
+    "CEG":   "Largest US nuclear fleet. AI data centres need carbon-free baseload power.",
+    "GS":    "Goldman Sachs. Investment banking + trading + asset management. Dealmaking recovery.",
+    "PANW":  "Palo Alto Networks. Cybersecurity platform consolidation. AI-driven threat detection.",
+    "CRWD":  "CrowdStrike. Endpoint security leader. AI-native cyber defense at scale.",
 }
 
 TOP_30 = list(TOP_30_WHY.keys())
