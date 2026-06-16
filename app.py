@@ -5937,10 +5937,17 @@ def cfis_projection(info, hist, hunter_score, conviction_score, crowding_score):
 
     price = hist["Close"].iloc[-1]
 
-    # Real momentum at multiple timeframes
-    mom_5 = (price - hist["Close"].iloc[-5]) / hist["Close"].iloc[-5] * 100 if len(hist) >= 5 else 0
-    mom_15 = (price - hist["Close"].iloc[-15]) / hist["Close"].iloc[-15] * 100 if len(hist) >= 15 else 0
-    mom_30 = (price - hist["Close"].iloc[-30]) / hist["Close"].iloc[-30] * 100 if len(hist) >= 30 else 0
+    # Real momentum at multiple timeframes (with NaN protection)
+    def safe_mom(arr, n):
+        if len(arr) < n:
+            return 0
+        p0 = float(arr.iloc[-n])
+        if p0 == 0 or pd.isna(p0) or pd.isna(float(arr.iloc[-1])):
+            return 0
+        return (float(arr.iloc[-1]) - p0) / p0 * 100
+    mom_5 = safe_mom(hist["Close"], 5)
+    mom_15 = safe_mom(hist["Close"], 15)
+    mom_30 = safe_mom(hist["Close"], 30)
 
     # RSI — mean reversion pressure
     try:
@@ -5967,47 +5974,48 @@ def cfis_projection(info, hist, hunter_score, conviction_score, crowding_score):
     # Base trend: weighted momentum (recent momentum matters more)
     base_trend = mom_5 * 0.40 + mom_15 * 0.35 + mom_30 * 0.25
 
-    # Conviction multiplier: CFIS score drives how much we trust the trend
-    # 80+ conviction = strong trust, 60-80 = moderate, <60 = skeptical
-    conv_mult = 0.5 + (conviction_score / 100) * 0.8  # range: 0.5 to 1.3
+    # Conviction multiplier: moderate range so it adjusts, not dominates
+    conv_mult = 0.7 + (conviction_score / 100) * 0.6  # range: 0.7 to 1.3
 
     # RSI mean reversion brake
     rsi_adj = 0
-    if rsi > 75:
-        rsi_adj = -(rsi - 70) * 0.15  # overbought pulls projection down
-    elif rsi < 25:
-        rsi_adj = (30 - rsi) * 0.15  # oversold pushes projection up
+    if rsi > 70:
+        rsi_adj = -(rsi - 65) * 0.12
+    elif rsi < 30:
+        rsi_adj = (35 - rsi) * 0.12
 
-    # SMA structure bonus
+    # SMA structure bonus (small nudge, not a driver)
     sma_adj = 0
     if bullish_sma:
-        sma_adj = 1.5
+        sma_adj = 0.8
     elif bearish_sma:
-        sma_adj = -1.5
+        sma_adj = -0.8
 
     # Volume confirmation bonus
     vol_adj = 0
     if vol_ratio > 1.3 and base_trend > 0:
-        vol_adj = 1.0
+        vol_adj = 0.5
     elif vol_ratio > 1.3 and base_trend < 0:
-        vol_adj = -1.0
+        vol_adj = -0.5
 
     # Crowding fade: if too crowded and trending up, reduce projection
     crowd_adj = 0
     if crowding_score > 65 and base_trend > 0:
-        crowd_adj = -(crowding_score - 60) * 0.08
+        crowd_adj = -(crowding_score - 60) * 0.05
 
-    # Combine all signals
-    daily_rate = (base_trend / 15) * conv_mult  # normalize to daily rate
+    # Square-root dampening: momentum doesn't extrapolate linearly
+    import math
+    sign = 1 if base_trend >= 0 else -1
+    dampened = sign * math.sqrt(abs(base_trend)) * 1.2  # sqrt compresses large values
 
-    proj_15 = daily_rate * 15 + rsi_adj + sma_adj + vol_adj + crowd_adj
-    proj_30 = daily_rate * 30 * 0.7 + rsi_adj * 1.2 + sma_adj * 1.5 + vol_adj + crowd_adj
-    proj_90 = daily_rate * 90 * 0.4 + rsi_adj * 1.5 + sma_adj * 2.5 + vol_adj * 1.5 + crowd_adj * 1.5
+    proj_15 = dampened * conv_mult + rsi_adj + sma_adj + vol_adj + crowd_adj
+    proj_30 = dampened * conv_mult * 1.6 + rsi_adj * 1.1 + sma_adj * 1.2 + vol_adj + crowd_adj
+    proj_90 = dampened * conv_mult * 2.2 + rsi_adj * 1.3 + sma_adj * 1.5 + vol_adj * 1.2 + crowd_adj * 1.2
 
-    # Cap projections at realistic ranges
-    proj_15 = max(-25, min(25, proj_15))
-    proj_30 = max(-40, min(40, proj_30))
-    proj_90 = max(-60, min(60, proj_90))
+    # Realistic caps
+    proj_15 = max(-15, min(15, proj_15))
+    proj_30 = max(-25, min(25, proj_30))
+    proj_90 = max(-40, min(40, proj_90))
 
     # Direction
     avg_proj = (proj_15 + proj_30 + proj_90) / 3
@@ -6064,12 +6072,15 @@ def _build_row(t, info, hist, enriched=None):
     elif thesis_obj.get("investment_thesis"):
         inv = thesis_obj["investment_thesis"]
         one_sentence = inv.split(".")[0] + "." if "." in inv else inv[:120]
-    mom_15 = 0
-    if len(hist) >= 15:
-        mom_15 = (hist["Close"].iloc[-1] - hist["Close"].iloc[-15]) / hist["Close"].iloc[-15] * 100
-    mom_5 = 0
-    if len(hist) >= 5:
-        mom_5 = (hist["Close"].iloc[-1] - hist["Close"].iloc[-5]) / hist["Close"].iloc[-5] * 100
+    def _safe_pct(arr, n):
+        if len(arr) < n:
+            return 0
+        p0, p1 = float(arr.iloc[-n]), float(arr.iloc[-1])
+        if p0 == 0 or pd.isna(p0) or pd.isna(p1):
+            return 0
+        return (p1 - p0) / p0 * 100
+    mom_15 = _safe_pct(hist["Close"], 15)
+    mom_5 = _safe_pct(hist["Close"], 5)
 
     # CFIS 3.0 native projection
     hs = hunter["hunter_score"]
