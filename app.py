@@ -8054,9 +8054,9 @@ elif page == "3️⃣ Opportunity Engine":
     # ── AUTO-GENERATED OPPORTUNITY LISTS ──────────────────────
     opp_tab = st.radio("Time Horizon", ["15-Day", "30-Day", "90-Day", "3-10 Year Legacy", "All Themes"], horizontal=True, label_visibility="collapsed")
     opp_universe = get_opportunity_universe()
-    with st.spinner(f"Scanning {len(opp_universe)} stocks…"):
+    with st.spinner(f"Loading signals for {len(opp_universe)} stocks…"):
         try:
-            all_opps = scan_opportunities(tuple(opp_universe))
+            all_opps = scan_or_load(tuple(opp_universe))
         except Exception:
             all_opps = []
     if all_opps:
@@ -8607,9 +8607,9 @@ elif page == "4️⃣ Portfolio Commander":
     st.caption("How should capital be allocated? Auto-constructed portfolios with position sizing.")
 
     port_universe = get_opportunity_universe()
-    with st.spinner(f"Scanning {len(port_universe)} stocks for portfolio construction…"):
+    with st.spinner(f"Loading signals for {len(port_universe)} stocks…"):
         try:
-            all_opps = scan_opportunities(tuple(port_universe))
+            all_opps = scan_or_load(tuple(port_universe))
         except Exception:
             all_opps = []
 
@@ -9151,9 +9151,9 @@ elif page == "6️⃣ Hunter Command by Louis Teo":
         if not st.session_state.get("cmd_scan_triggered"):
             st.info("Click the button above to scan the global universe.")
         else:
-          with st.spinner(f"Scanning {len(scanner_universe)} stocks across global universe…"):
+          with st.spinner(f"Loading signals for {len(scanner_universe)} stocks…"):
             try:
-                all_opps = scan_opportunities(tuple(scanner_universe))
+                all_opps = scan_or_load(tuple(scanner_universe))
                 all_sorted = sorted(all_opps, key=lambda x: x["conviction"], reverse=True)
 
                 go_stocks = [r for r in all_sorted if r.get("action") in ("STRONG GO", "GO")][:7]
@@ -9494,9 +9494,9 @@ elif page == "6️⃣ Hunter Command by Louis Teo":
         st.markdown("---")
         st.markdown("#### Quick Scan — Top GO/WAIT Stocks")
         if st.button("Scan Smart Money for top opportunities", key="smp_scan"):
-            with st.spinner("Scanning Smart Money Pressure for top-rated stocks…"):
+            with st.spinner("Loading Smart Money signals…"):
                 try:
-                    all_opps = scan_opportunities(tuple(scanner_universe))
+                    all_opps = scan_or_load(tuple(scanner_universe))
                     top_tickers = [r["ticker"] for r in sorted(all_opps, key=lambda x: x["conviction"], reverse=True) if r.get("action") in ("STRONG GO", "GO", "PILOT")][:15]
                     if not top_tickers:
                         top_tickers = [r["ticker"] for r in sorted(all_opps, key=lambda x: x["conviction"], reverse=True)][:10]
