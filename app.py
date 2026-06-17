@@ -25,6 +25,7 @@ from services.data_providers import (
     fmp_request, finnhub_request, edgar_request,
     get_cik, fetch_finviz_quote,
 )
+from services.signal_scanner import save_scan_results, load_latest_signals, has_todays_scan
 
 # ─────────────────────────────────────────────────────────────
 # PAGE CONFIG
@@ -6182,7 +6183,21 @@ def scan_opportunities(universe_tuple):
                 pass
         rows.append(r)
 
+    save_scan_results(rows)
     return rows
+
+
+def scan_or_load(universe_tuple):
+    """Load today's stored signals if available, otherwise scan live.
+
+    This avoids re-scanning 300 stocks on every page refresh when
+    Supabase has today's pre-computed results.
+    """
+    if has_todays_scan():
+        stored = load_latest_signals(limit=len(universe_tuple))
+        if stored:
+            return stored
+    return scan_opportunities(universe_tuple)
 
 
 @st.cache_data(ttl=600)
