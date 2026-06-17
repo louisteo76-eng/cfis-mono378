@@ -5918,6 +5918,82 @@ FULL_UNIVERSE = [
 ]
 
 
+# ── US Market Scanner Pipeline ──────────────────────────────────────
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def fetch_full_us_market():
+    """Stage 1: Pull all US-listed stocks from FMP API. Market cap > $100M."""
+    fmp_key = st.secrets.get("FMP_API_KEY", "")
+    if not fmp_key:
+        return []
+    all_stocks = []
+    for exchange in ("NYSE", "NASDAQ", "AMEX"):
+        try:
+            url = f"https://financialmodelingprep.com/api/v3/stock-screener?exchange={exchange}&marketCapMoreThan=100000000&limit=10000&apikey={fmp_key}"
+            resp = requests.get(url, timeout=30)
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, list):
+                    for s in data:
+                        sym = s.get("symbol", "")
+                        if sym and "." not in sym and "^" not in sym and len(sym) <= 5:
+                            all_stocks.append({
+                                "symbol": sym,
+                                "name": s.get("companyName", sym),
+                                "market_cap": s.get("marketCap", 0),
+                                "sector": s.get("sector", ""),
+                                "exchange": exchange,
+                            })
+        except Exception:
+            continue
+    all_stocks.sort(key=lambda x: x.get("market_cap", 0), reverse=True)
+    return all_stocks
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def quick_momentum_scan(tickers_tuple):
+    """Stage 2: Quick price-only momentum scan with parallel workers."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    tickers = list(tickers_tuple)
+    results = {}
+    def _quick_fetch(t):
+        try:
+            tk = yf.Ticker(t)
+            h = tk.history(period="1mo")
+            if h.empty or len(h) < 5:
+                return t, None
+            close = h["Close"]
+            cur = float(close.iloc[-1])
+            mom5 = (cur - float(close.iloc[-5])) / float(close.iloc[-5]) * 100 if len(close) >= 5 and float(close.iloc[-5]) > 0 else 0
+            vol_avg = float(h["Volume"].mean()) if "Volume" in h.columns else 0
+            return t, {"price": cur, "mom_5d": mom5, "vol_avg": vol_avg}
+        except Exception:
+            return t, None
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        futures = {executor.submit(_quick_fetch, t): t for t in tickers}
+        for f in as_completed(futures):
+            t, data = f.result()
+            if data:
+                results[t] = data
+    return results
+
+
+def get_scanner_universe(max_tickers=300):
+    """Stage 3: Combines curated FULL_UNIVERSE + FMP top market cap stocks."""
+    full_market = fetch_full_us_market()
+    if not full_market:
+        return FULL_UNIVERSE
+    existing = set(FULL_UNIVERSE)
+    fmp_tickers = [s["symbol"] for s in full_market[:2000] if s["symbol"] not in existing]
+    combined = list(FULL_UNIVERSE) + fmp_tickers[:max_tickers - len(FULL_UNIVERSE)]
+    return combined[:max_tickers]
+
+
+def get_opportunity_universe():
+    """Returns the active scanner universe — expanded when FMP is available."""
+    return get_scanner_universe(300)
+
+
 def _prefetch_yfinance(tickers):
     """Parallel prefetch yfinance data — returns dict of ticker -> (info, hist)."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -8030,9 +8106,10 @@ elif page == "3️⃣ Opportunity Engine":
 
     # ── AUTO-GENERATED OPPORTUNITY LISTS ──────────────────────
     opp_tab = st.radio("Time Horizon", ["15-Day", "30-Day", "90-Day", "3-10 Year Legacy", "All Themes"], horizontal=True, label_visibility="collapsed")
-    with st.spinner(f"Scanning {len(FULL_UNIVERSE)} stocks…"):
+    opp_universe = get_opportunity_universe()
+    with st.spinner(f"Scanning {len(opp_universe)} stocks…"):
         try:
-            all_opps = scan_opportunities(tuple(FULL_UNIVERSE))
+            all_opps = scan_opportunities(tuple(opp_universe))
         except Exception:
             all_opps = []
     if all_opps:
@@ -8582,9 +8659,10 @@ elif page == "4️⃣ Portfolio Commander":
     st.title("💼 Portfolio Commander™")
     st.caption("How should capital be allocated? Auto-constructed portfolios with position sizing.")
 
-    with st.spinner(f"Scanning {len(FULL_UNIVERSE)} stocks for portfolio construction…"):
+    port_universe = get_opportunity_universe()
+    with st.spinner(f"Scanning {len(port_universe)} stocks for portfolio construction…"):
         try:
-            all_opps = scan_opportunities(tuple(FULL_UNIVERSE))
+            all_opps = scan_opportunities(tuple(port_universe))
         except Exception:
             all_opps = []
 
@@ -8661,9 +8739,10 @@ elif page == "5️⃣ Validation Engine":
     val_tab1, val_tab2, val_tab3 = st.tabs(["📅 30-Day Period Tracker", "📊 Signal Intelligence", "🌊 Theme Performance"])
 
     # ── Scan all stocks with period data ─────────────
-    with st.spinner(f"Scanning {len(FULL_UNIVERSE)} stocks with historical periods from March 1, 2026…"):
+    val_universe = get_opportunity_universe()
+    with st.spinner(f"Scanning {len(val_universe)} stocks with historical periods from March 1, 2026…"):
         try:
-            val_rows, period_labels = scan_validation_periods(tuple(FULL_UNIVERSE), "2026-03-01")
+            val_rows, period_labels = scan_validation_periods(tuple(val_universe), "2026-03-01")
         except Exception:
             val_rows, period_labels = [], []
 
@@ -9108,14 +9187,26 @@ elif page == "6️⃣ Hunter Command by Louis Teo":
     cmd_tab1, cmd_tab2, cmd_tab3, cmd_tab4 = st.tabs(["📊 Command Center", "🔍 Deep Analysis", "🌐 Universe", "💰 Smart Money"])
 
     with cmd_tab1:
-        if st.button(f"⚡ SCAN {len(FULL_UNIVERSE)} STOCKS", key="cmd_scan", type="primary", use_container_width=True):
+        scanner_universe = get_opportunity_universe()
+        fmp_market = fetch_full_us_market()
+        fmp_count = len(fmp_market) if fmp_market else 0
+        st.markdown(f"""
+        <div style="background:linear-gradient(135deg,#0d1117,#161b22);border:1px solid #30363d;border-radius:12px;padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+            <div style="font-size:13px;color:#8b949e">
+                <span style="color:#58a6ff;font-weight:700">US Market</span> {fmp_count:,} stocks
+                → <span style="color:#FFC107;font-weight:700">Cap Filter</span>
+                → <span style="color:#4CAF50;font-weight:700">CFIS Deep Scan</span> {len(scanner_universe)} stocks
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button(f"⚡ SCAN {len(scanner_universe)} STOCKS (from {fmp_count:,} US market)", key="cmd_scan", type="primary", use_container_width=True):
             st.session_state["cmd_scan_triggered"] = True
         if not st.session_state.get("cmd_scan_triggered"):
             st.info("Click the button above to scan the global universe.")
         else:
-          with st.spinner(f"Scanning {len(FULL_UNIVERSE)} stocks across global universe…"):
+          with st.spinner(f"Scanning {len(scanner_universe)} stocks across global universe…"):
             try:
-                all_opps = scan_opportunities(tuple(FULL_UNIVERSE))
+                all_opps = scan_opportunities(tuple(scanner_universe))
                 all_sorted = sorted(all_opps, key=lambda x: x["conviction"], reverse=True)
 
                 go_stocks = [r for r in all_sorted if r.get("action") in ("STRONG GO", "GO")][:7]
@@ -9396,7 +9487,7 @@ elif page == "6️⃣ Hunter Command by Louis Teo":
         <div style="background:#161b27;border-radius:12px;padding:16px;margin-bottom:16px">
             <div style="font-size:12px;color:#06b6d4;font-weight:700;margin-bottom:8px">UNIVERSE COVERAGE</div>
             <div style="font-size:13px;color:#e8ecf4;line-height:1.8">
-                <strong>Total Universe:</strong> {len(FULL_UNIVERSE)} stocks<br>
+                <strong>Total Universe:</strong> {len(scanner_universe)} stocks (from {fmp_count:,} US market)<br>
                 <strong>Regions:</strong> USA, Canada, Europe, Japan, Singapore, Hong Kong, Asia<br>
                 <strong>Filter:</strong> Market Cap &gt; USD 500M · Sufficient liquidity · Sufficient data<br>
                 <strong>Themes:</strong> AI · Robotics · Energy · Nuclear · Space · Defense · Cybersecurity · Biotech · Digital Assets · Tokenization
@@ -9458,7 +9549,7 @@ elif page == "6️⃣ Hunter Command by Louis Teo":
         if st.button("Scan Smart Money for top opportunities", key="smp_scan"):
             with st.spinner("Scanning Smart Money Pressure for top-rated stocks…"):
                 try:
-                    all_opps = scan_opportunities(tuple(FULL_UNIVERSE))
+                    all_opps = scan_opportunities(tuple(scanner_universe))
                     top_tickers = [r["ticker"] for r in sorted(all_opps, key=lambda x: x["conviction"], reverse=True) if r.get("action") in ("STRONG GO", "GO", "PILOT")][:15]
                     if not top_tickers:
                         top_tickers = [r["ticker"] for r in sorted(all_opps, key=lambda x: x["conviction"], reverse=True)][:10]
