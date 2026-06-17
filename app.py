@@ -1007,6 +1007,38 @@ def fetch(ticker):
     return info, hist, inst, maj, opts_calls, opts_puts, dates
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_search_universe_options():
+    """Return ticker/name pairs for search autocomplete from Supabase/FMP.
+
+    If the market universe is not configured, this returns an empty list and
+    the app keeps using the curated name map.
+    """
+    rows = fetch_us_universe(FMP_KEY)
+    options = []
+    for row in rows:
+        sym = str(row.get("symbol", "")).strip().upper()
+        if not sym:
+            continue
+        name = str(row.get("name") or row.get("companyName") or sym).strip()
+        options.append((sym, name[:60]))
+    return options
+
+
+def normalize_ticker_input(value, name_map=None):
+    """Resolve company-name aliases while allowing any ticker-like symbol."""
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    if " — " in raw:
+        raw = raw.split(" — ")[0].strip()
+    resolved = (name_map or {}).get(raw.lower())
+    if resolved:
+        return resolved
+    cleaned = re.sub(r"[^A-Za-z0-9.=-]", "", raw).upper()
+    return cleaned
+
+
 # ─────────────────────────────────────────────────────────────
 # 18 CFIS-X SCORING CATEGORIES
 # ─────────────────────────────────────────────────────────────
@@ -7414,6 +7446,16 @@ if page == "1️⃣ Market Health":
     SEARCH_OPTIONS = [""] + sorted(
         [f"{t} — {TICKER_DISPLAY.get(t, t)}" for t in set(NAME_TO_TICKER.values())]
     )
+    try:
+        market_options = get_search_universe_options()
+        existing_options = {opt.split(" — ")[0] for opt in SEARCH_OPTIONS if opt}
+        for sym, display_name in market_options:
+            if sym not in existing_options:
+                SEARCH_OPTIONS.append(f"{sym} — {display_name}")
+                existing_options.add(sym)
+        SEARCH_OPTIONS = [""] + sorted(SEARCH_OPTIONS[1:])
+    except Exception:
+        pass
 
     # Safe pre-fill from quick-analyze buttons
     if "quick_ticker" in st.session_state:
@@ -7447,14 +7489,11 @@ if page == "1️⃣ Market Health":
     # Resolve input: direct_ticker (from button click) > dropdown > custom text
     ticker_input = ""
     if direct_ticker:
-        ticker_input = direct_ticker
+        ticker_input = normalize_ticker_input(direct_ticker, NAME_TO_TICKER)
     elif search_pick:
-        ticker_input = search_pick.split(" — ")[0].strip()
+        ticker_input = normalize_ticker_input(search_pick, NAME_TO_TICKER)
     elif custom_ticker:
-        ticker_input = custom_ticker.strip()
-        resolved = NAME_TO_TICKER.get(ticker_input.lower())
-        if resolved:
-            ticker_input = resolved
+        ticker_input = normalize_ticker_input(custom_ticker, NAME_TO_TICKER)
 
     # Clear button when analyzing
     if ticker_input and direct_ticker:
@@ -7585,6 +7624,8 @@ if page == "1️⃣ Market Health":
                 st.stop()
 
         price = safe(info, "currentPrice", "regularMarketPrice", default=None)
+        if price is None and hist is not None and not hist.empty:
+            price = float(hist["Close"].iloc[-1])
         if price is None:
             st.error(f"No data found for **{ticker}**. Check the symbol and try again.")
             st.stop()
@@ -10028,4 +10069,3 @@ elif page == "8️⃣ CFIS Frontier by Louis Teo":
             """, unsafe_allow_html=True)
         else:
             st.warning("No frontier data available. Try again in a moment.")
-
