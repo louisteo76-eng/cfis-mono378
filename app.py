@@ -1,6 +1,7 @@
 """
 mono378 — 18-Category Stock Intelligence Platform
 """
+import os
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -15,6 +16,9 @@ import json
 import time as _time
 from collections import Counter
 from urllib.parse import quote as url_quote
+
+from dotenv import load_dotenv
+load_dotenv()
 
 # ─────────────────────────────────────────────────────────────
 # PAGE CONFIG
@@ -390,9 +394,27 @@ def safe(info, *keys, default=None):
 # FMP (250/day), Finnhub (60/min), SEC EDGAR (free), Finviz
 # ─────────────────────────────────────────────────────────────
 
-FMP_KEY = st.secrets.get("FMP_API_KEY", "") if hasattr(st, "secrets") else ""
-FINNHUB_KEY = st.secrets.get("FINNHUB_API_KEY", "") if hasattr(st, "secrets") else ""
+def _get_api_key(name):
+    """Read an API key: Streamlit secrets first, then os.environ (.env)."""
+    if hasattr(st, "secrets"):
+        val = st.secrets.get(name, "")
+        if val:
+            return val
+    return os.environ.get(name, "")
+
+FMP_KEY = _get_api_key("FMP_API_KEY")
+FINNHUB_KEY = _get_api_key("FINNHUB_API_KEY")
 EDGAR_UA = "CFIS-X/2.0 (louisteo76@gmail.com)"
+
+if "api_warnings_shown" not in st.session_state:
+    st.session_state["api_warnings_shown"] = True
+    _missing = []
+    if not FMP_KEY:
+        _missing.append("FMP_API_KEY")
+    if not FINNHUB_KEY:
+        _missing.append("FINNHUB_API_KEY")
+    if _missing:
+        st.sidebar.warning(f"Missing API keys: {', '.join(_missing)}. Some features will be limited. Set them in .env or .streamlit/secrets.toml.")
 
 _CIK_CACHE = {}
 
@@ -5923,13 +5945,12 @@ FULL_UNIVERSE = [
 @st.cache_data(ttl=86400, show_spinner=False)
 def fetch_full_us_market():
     """Stage 1: Pull all US-listed stocks from FMP API. Market cap > $100M."""
-    fmp_key = st.secrets.get("FMP_API_KEY", "")
-    if not fmp_key:
+    if not FMP_KEY:
         return []
     all_stocks = []
     for exchange in ("NYSE", "NASDAQ", "AMEX"):
         try:
-            url = f"https://financialmodelingprep.com/api/v3/stock-screener?exchange={exchange}&marketCapMoreThan=100000000&limit=10000&apikey={fmp_key}"
+            url = f"https://financialmodelingprep.com/api/v3/stock-screener?exchange={exchange}&marketCapMoreThan=100000000&limit=10000&apikey={FMP_KEY}"
             resp = requests.get(url, timeout=30)
             if resp.status_code == 200:
                 data = resp.json()
