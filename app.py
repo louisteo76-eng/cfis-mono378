@@ -20,6 +20,8 @@ from urllib.parse import quote as url_quote
 from dotenv import load_dotenv
 load_dotenv()
 
+from services.ticker_universe import fetch_fmp_us_universe, build_scanner_universe
+
 # ─────────────────────────────────────────────────────────────
 # PAGE CONFIG
 # ─────────────────────────────────────────────────────────────
@@ -5945,30 +5947,7 @@ FULL_UNIVERSE = [
 @st.cache_data(ttl=86400, show_spinner=False)
 def fetch_full_us_market():
     """Stage 1: Pull all US-listed stocks from FMP API. Market cap > $100M."""
-    if not FMP_KEY:
-        return []
-    all_stocks = []
-    for exchange in ("NYSE", "NASDAQ", "AMEX"):
-        try:
-            url = f"https://financialmodelingprep.com/api/v3/stock-screener?exchange={exchange}&marketCapMoreThan=100000000&limit=10000&apikey={FMP_KEY}"
-            resp = requests.get(url, timeout=30)
-            if resp.status_code == 200:
-                data = resp.json()
-                if isinstance(data, list):
-                    for s in data:
-                        sym = s.get("symbol", "")
-                        if sym and "." not in sym and "^" not in sym and len(sym) <= 5:
-                            all_stocks.append({
-                                "symbol": sym,
-                                "name": s.get("companyName", sym),
-                                "market_cap": s.get("marketCap", 0),
-                                "sector": s.get("sector", ""),
-                                "exchange": exchange,
-                            })
-        except Exception:
-            continue
-    all_stocks.sort(key=lambda x: x.get("market_cap", 0), reverse=True)
-    return all_stocks
+    return fetch_fmp_us_universe(FMP_KEY)
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -6001,13 +5980,7 @@ def quick_momentum_scan(tickers_tuple):
 
 def get_scanner_universe(max_tickers=300):
     """Stage 3: Combines curated FULL_UNIVERSE + FMP top market cap stocks."""
-    full_market = fetch_full_us_market()
-    if not full_market:
-        return FULL_UNIVERSE
-    existing = set(FULL_UNIVERSE)
-    fmp_tickers = [s["symbol"] for s in full_market[:2000] if s["symbol"] not in existing]
-    combined = list(FULL_UNIVERSE) + fmp_tickers[:max_tickers - len(FULL_UNIVERSE)]
-    return combined[:max_tickers]
+    return build_scanner_universe(fetch_full_us_market(), FULL_UNIVERSE, max_tickers)
 
 
 def get_opportunity_universe():
