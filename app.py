@@ -20,7 +20,7 @@ from urllib.parse import quote as url_quote
 from dotenv import load_dotenv
 load_dotenv()
 
-from services.ticker_universe import fetch_fmp_us_universe, build_scanner_universe
+from services.ticker_universe import fetch_us_universe, build_scanner_universe
 from services.data_providers import (
     fmp_request, finnhub_request, edgar_request,
     get_cik, fetch_finviz_quote,
@@ -5884,8 +5884,8 @@ FULL_UNIVERSE = [
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def fetch_full_us_market():
-    """Stage 1: Pull all US-listed stocks from FMP API. Market cap > $100M."""
-    return fetch_fmp_us_universe(FMP_KEY)
+    """Stage 1: Pull US-listed stocks. Supabase cache first, FMP fallback."""
+    return fetch_us_universe(FMP_KEY)
 
 
 @st.cache_data(ttl=600, show_spinner=False)
