@@ -6327,6 +6327,287 @@ def render_opportunity_table(rows, count=12, show_thesis=True):
 
 
 # ─────────────────────────────────────────────────────────────
+# CFIS FRONTIER — ELITE CAPITAL MIGRATION INDEX
+# ─────────────────────────────────────────────────────────────
+
+FRONTIER_UNIVERSE = {
+    # ── ENERGY / NUCLEAR / GRID ──
+    "VST":   {"sector": "Energy", "bottleneck": "AI power demand", "elite": "Musk/Thiel ecosystem",
+              "thesis": "Vistra owns natural gas + nuclear peakers. AI data centres need 24/7 baseload. Grid bottleneck play.",
+              "catalyst": "Summer peak demand + new data centre PPAs", "asymmetry": "Power demand doubles by 2030, supply constrained"},
+    "OKLO":  {"sector": "Nuclear", "bottleneck": "Small modular reactors", "elite": "Sam Altman (Chairman)",
+              "thesis": "Altman-backed micro-reactor company. Aurora powerhouse for remote/data centre use. Pre-revenue but strategic.",
+              "catalyst": "NRC licensing progress + first customer contracts", "asymmetry": "If SMRs work, monopoly on compact nuclear"},
+    "SMR":   {"sector": "Nuclear", "bottleneck": "Advanced nuclear design", "elite": "Bill Gates (founder)",
+              "thesis": "NuScale Power — only NRC-approved small modular reactor design. First-mover in next-gen nuclear.",
+              "catalyst": "DOE funding + utility partnerships", "asymmetry": "Nuclear renaissance = decade-long tailwind"},
+    "CCJ":   {"sector": "Uranium", "bottleneck": "Uranium fuel supply", "elite": "Institutional accumulation",
+              "thesis": "Cameco controls 15% of global uranium. Nuclear restarts need fuel. Supply deficit widening.",
+              "catalyst": "Reactor restarts globally + supply contracts", "asymmetry": "Uranium supply takes 10+ years to bring online"},
+    "FSLR":  {"sector": "Solar", "bottleneck": "US solar manufacturing", "elite": "IRA beneficiary",
+              "thesis": "Only US-scale solar panel maker. Tariffs + IRA subsidies = protected moat. Thin-film tech advantage.",
+              "catalyst": "IRA manufacturing credits + tariff escalation", "asymmetry": "US energy independence requires domestic solar"},
+    # ── ROBOTICS / AUTOMATION ──
+    "ISRG":  {"sector": "Robotics", "bottleneck": "Surgical robotics monopoly", "elite": "Institutional conviction",
+              "thesis": "Intuitive Surgical — 80%+ market share in robotic surgery. Razor/blade model with instruments.",
+              "catalyst": "Da Vinci 5 ramp + international expansion", "asymmetry": "Every hospital needs one, only 15% penetrated"},
+    "TER":   {"sector": "Robotics", "bottleneck": "Semiconductor test equipment", "elite": "Chip supply chain",
+              "thesis": "Teradyne — tests every chip before it ships + Universal Robots cobots. Dual AI play.",
+              "catalyst": "AI chip testing demand + cobot adoption", "asymmetry": "No chip ships without testing — invisible toll booth"},
+    "AXON":  {"sector": "Defense Tech", "bottleneck": "Law enforcement tech", "elite": "Thiel-adjacent",
+              "thesis": "Axon — Taser + body cameras + cloud evidence platform. SaaS for public safety.",
+              "catalyst": "AI-powered report writing + drone integration", "asymmetry": "Government sticky contracts, 95% retention"},
+    # ── SPACE / DEFENSE / SOVEREIGNTY ──
+    "LHX":   {"sector": "Defense", "bottleneck": "Space & airborne ISR", "elite": "Defense primes",
+              "thesis": "L3Harris — space sensors, electronic warfare, satellite comms. Post-merger integration complete.",
+              "catalyst": "DoD budget increase + space domain awareness", "asymmetry": "Satellites are the new high ground"},
+    "RKLB":  {"sector": "Space", "bottleneck": "Small launch vehicles", "elite": "Thiel/Founders Fund (early backer)",
+              "thesis": "Rocket Lab — 2nd most frequent orbital launcher after SpaceX. Neutron rocket in development.",
+              "catalyst": "Neutron first launch + Electron cadence increase", "asymmetry": "Space economy $1T by 2040, launch is the bottleneck"},
+    "LDOS":  {"sector": "Defense IT", "bottleneck": "Government digital backbone", "elite": "Deep state IT",
+              "thesis": "Leidos — largest pure-play US defense IT. Cyber, AI, digital modernization for DoD/Intel.",
+              "catalyst": "AI integration contracts + cyber warfare spend", "asymmetry": "Government can't function without these systems"},
+    "KTOS":  {"sector": "Defense", "bottleneck": "Drone warfare", "elite": "Thiel ecosystem",
+              "thesis": "Kratos Defense — autonomous drone swarms, jet-powered UAVs, satellite ground systems.",
+              "catalyst": "USAF drone program awards + hypersonic targets", "asymmetry": "Ukraine proved drones reshape warfare"},
+    # ── RARE EARTH / CRITICAL MINERALS ──
+    "MP":    {"sector": "Critical Minerals", "bottleneck": "US rare earth supply", "elite": "DoD strategic",
+              "thesis": "MP Materials — only active rare earth mine in the US (Mountain Pass). China controls 80% of processing.",
+              "catalyst": "DoD contracts + processing facility completion", "asymmetry": "No EVs, no wind turbines, no missiles without rare earths"},
+    "LAC":   {"sector": "Lithium", "bottleneck": "US lithium production", "elite": "GM partnership",
+              "thesis": "Lithium Americas — Thacker Pass is the largest lithium deposit in North America. GM invested $650M.",
+              "catalyst": "Thacker Pass construction milestones + offtake agreements", "asymmetry": "US lithium independence is national security"},
+    # ── LONGEVITY / BIOTECH ──
+    "REGN":  {"sector": "Biotech", "bottleneck": "Antibody platform", "elite": "Leonard Schleifer vision",
+              "thesis": "Regeneron — Eylea + Dupixent + obesity pipeline. Antibody factory approach to drug discovery.",
+              "catalyst": "Obesity drug data + Dupixent label expansion", "asymmetry": "Platform generates $15B+ and still accelerating"},
+    "EXAS":  {"sector": "Diagnostics", "bottleneck": "Cancer early detection", "elite": "Longevity movement",
+              "thesis": "Exact Sciences — Cologuard for colorectal cancer + multi-cancer early detection tests.",
+              "catalyst": "FDA multi-cancer blood test approval", "asymmetry": "Detecting cancer at Stage 1 vs Stage 4 changes everything"},
+    "BEAM":  {"sector": "Gene Editing", "bottleneck": "Base editing precision", "elite": "a16z Bio",
+              "thesis": "Beam Therapeutics — next-gen CRISPR (base editing). More precise than cut-and-paste CRISPR.",
+              "catalyst": "Clinical trial readouts + sickle cell data", "asymmetry": "If base editing works, it's the upgrade to CRISPR"},
+    # ── FINANCIAL SYSTEM 2.0 ──
+    "SQ":    {"sector": "Fintech", "bottleneck": "SMB financial OS", "elite": "Jack Dorsey",
+              "thesis": "Block (Square) — Cash App + Bitcoin + merchant payments. Building crypto-native finance.",
+              "catalyst": "Bitcoin integration + Cash App lending", "asymmetry": "2B unbanked people need a financial system, not a bank"},
+    "SOFI":  {"sector": "Fintech", "bottleneck": "Digital bank platform", "elite": "Thiel-adjacent (ex-SoFi team)",
+              "thesis": "SoFi — bank charter + lending + investing + Galileo platform. Full-stack fintech.",
+              "catalyst": "Bank charter leverage + Galileo growth", "asymmetry": "Traditional banks can't innovate this fast"},
+    "HOOD":  {"sector": "Fintech", "bottleneck": "Retail trading infra", "elite": "a16z backed",
+              "thesis": "Robinhood — democratized trading. Gold subscribers + crypto + retirement accounts.",
+              "catalyst": "UK/EU expansion + crypto revenue diversification", "asymmetry": "Gen Z's default brokerage"},
+    # ── WATER / INFRASTRUCTURE ──
+    "XYL":   {"sector": "Water", "bottleneck": "Water infrastructure", "elite": "Infrastructure bill",
+              "thesis": "Xylem — water tech: pumps, treatment, analytics. Every city needs clean water infrastructure.",
+              "catalyst": "Infrastructure bill spending + smart water tech", "asymmetry": "Water scarcity is the most underpriced risk on Earth"},
+    "AWK":   {"sector": "Water", "bottleneck": "US water utility monopoly", "elite": "Regulated utility",
+              "thesis": "American Water Works — largest US water utility. Regulated monopoly with rate base growth.",
+              "catalyst": "Rate case approvals + acquisition pipeline", "asymmetry": "You can't un-need water. Pipes are 80+ years old"},
+    # ── MANUFACTURING / RESHORING ──
+    "FLEX":  {"sector": "Manufacturing", "bottleneck": "Electronics reshoring", "elite": "Supply chain shift",
+              "thesis": "Flex Ltd — contract manufacturer for AI servers, EVs, medical devices. Reshoring beneficiary.",
+              "catalyst": "AI server buildout + reshoring wave", "asymmetry": "Manufacturing is coming back to allies — Flex is ready"},
+    "EMR":   {"sector": "Industrial", "bottleneck": "Industrial automation", "elite": "Institutional core",
+              "thesis": "Emerson Electric — factory automation + process control. AspenTech acquisition adds AI for plants.",
+              "catalyst": "LNG buildout + factory automation spend", "asymmetry": "Every factory needs automation to compete with China"},
+    # ── AI INFRASTRUCTURE (non-obvious) ──
+    "VRT":   {"sector": "Data Centre", "bottleneck": "Power & cooling", "elite": "Jensen/NVIDIA ecosystem",
+              "thesis": "Vertiv — power and thermal management for data centres. NVIDIA can't run without cooling.",
+              "catalyst": "Liquid cooling demand + hyperscaler capex", "asymmetry": "AI is an energy problem — Vertiv solves the heat"},
+    "ANET":  {"sector": "Networking", "bottleneck": "AI data centre networking", "elite": "Jensen/NVIDIA ecosystem",
+              "thesis": "Arista Networks — Ethernet switching for AI clusters. 400G/800G networking for GPU-to-GPU communication.",
+              "catalyst": "800G adoption + Meta/Microsoft buildout", "asymmetry": "GPUs are useless without the network connecting them"},
+    "MRVL":  {"sector": "Semiconductors", "bottleneck": "Custom AI silicon", "elite": "Cloud hyperscaler deals",
+              "thesis": "Marvell — custom chips for AWS, Google, Microsoft. AI networking + storage controllers.",
+              "catalyst": "Custom silicon ramp + 5nm transition", "asymmetry": "Every hyperscaler wants custom chips, Marvell builds them"},
+    "MU":    {"sector": "Memory", "bottleneck": "HBM memory for AI", "elite": "NVIDIA supply chain",
+              "thesis": "Micron — HBM3E memory sits on top of every AI GPU. No HBM = no AI training.",
+              "catalyst": "HBM3E production ramp + pricing power", "asymmetry": "Memory is the bottleneck everyone forgot about"},
+    "ACLS":  {"sector": "Semiconductors", "bottleneck": "Ion implant equipment", "elite": "Chip equipment chain",
+              "thesis": "Axcelis Technologies — ion implantation for SiC power chips. EV + AI power management.",
+              "catalyst": "SiC adoption in EVs + AI power delivery", "asymmetry": "Niche monopoly in a critical chip-making step"},
+}
+
+
+def compute_frontier_score(info, hist, meta):
+    """Elite Signal Score = Elite Capital 25% + Strategic Bottleneck 25% +
+    Civilization Need 20% + Public Attention Gap 15% + Public Market Access 15%"""
+    import math
+
+    # ── Elite Capital Movement (25%) ──
+    elite_s = 55
+    inst = safe(info, "heldPercentInstitutions", default=None)
+    if inst is not None:
+        if inst > 0.85:
+            elite_s += 15
+        elif inst > 0.70:
+            elite_s += 10
+        elif inst < 0.30:
+            elite_s -= 10
+    insider = safe(info, "heldPercentInsiders", default=None)
+    if insider is not None:
+        if insider > 0.10:
+            elite_s += 10
+        elif insider > 0.05:
+            elite_s += 5
+    n_inst = safe(info, "institutionCount", "floatShares", default=0)
+    if isinstance(n_inst, (int, float)) and n_inst > 1000:
+        elite_s += 5
+    elite_s = min(100, max(0, elite_s))
+
+    # ── Strategic Bottleneck (25%) ──
+    bottleneck_s = 60
+    mc = safe(info, "marketCap", default=0) or 0
+    if mc < 10e9:
+        bottleneck_s += 15
+    elif mc < 50e9:
+        bottleneck_s += 8
+    gm = safe(info, "grossMargins", default=0) or 0
+    if gm > 0.60:
+        bottleneck_s += 12
+    elif gm > 0.40:
+        bottleneck_s += 6
+    rev_growth = safe(info, "revenueGrowth", default=0) or 0
+    if rev_growth > 0.25:
+        bottleneck_s += 8
+    elif rev_growth > 0.10:
+        bottleneck_s += 4
+    bottleneck_s = min(100, max(0, bottleneck_s))
+
+    # ── Civilization Need (20%) ──
+    civ_sectors = {"Energy": 80, "Nuclear": 90, "Uranium": 85, "Solar": 75, "Water": 85,
+                   "Defense": 75, "Defense Tech": 80, "Defense IT": 75, "Space": 85,
+                   "Critical Minerals": 90, "Lithium": 85, "Robotics": 80,
+                   "Manufacturing": 70, "Industrial": 70, "Biotech": 75, "Diagnostics": 80,
+                   "Gene Editing": 85, "Data Centre": 80, "Networking": 70, "Semiconductors": 75,
+                   "Memory": 80, "Fintech": 65}
+    civ_s = civ_sectors.get(meta["sector"], 60)
+
+    # ── Public Attention Gap (15%) — LOWER attention = HIGHER score ──
+    attention_s = 60
+    n_analysts = safe(info, "numberOfAnalystOpinions", default=0) or 0
+    if n_analysts < 10:
+        attention_s += 25
+    elif n_analysts < 20:
+        attention_s += 15
+    elif n_analysts < 30:
+        attention_s += 5
+    elif n_analysts > 40:
+        attention_s -= 15
+    avg_vol = 0
+    if not hist.empty and len(hist) >= 20:
+        avg_vol = hist["Volume"].iloc[-20:].mean()
+    if avg_vol < 5e6:
+        attention_s += 10
+    elif avg_vol > 30e6:
+        attention_s -= 10
+    attention_s = min(100, max(0, attention_s))
+
+    # ── Public Market Access (15%) ──
+    access_s = 50
+    if mc > 2e9:
+        access_s += 20
+    elif mc > 500e6:
+        access_s += 10
+    bid_ask = safe(info, "bid", default=0) or 0
+    ask = safe(info, "ask", default=0) or 0
+    if bid_ask > 0 and ask > 0:
+        spread_pct = (ask - bid_ask) / ask * 100
+        if spread_pct < 0.1:
+            access_s += 15
+        elif spread_pct < 0.5:
+            access_s += 8
+    if avg_vol > 1e6:
+        access_s += 10
+    elif avg_vol > 500e3:
+        access_s += 5
+    access_s = min(100, max(0, access_s))
+
+    # ── Survivability ──
+    total_cash = safe(info, "totalCash", default=0) or 0
+    total_debt = safe(info, "totalDebt", default=0) or 0
+    survivable = mc > 2e9 or total_cash > total_debt * 0.5 or total_debt == 0
+    surv_label = "✅ STRONG" if (mc > 10e9 and (total_cash > total_debt * 0.5 or total_debt == 0)) else (
+        "✅ OK" if survivable else "⚠️ FRAGILE")
+
+    # ── Composite ──
+    frontier_score = (elite_s * 0.25 + bottleneck_s * 0.25 +
+                      civ_s * 0.20 + attention_s * 0.15 + access_s * 0.15)
+
+    return {
+        "frontier": round(frontier_score),
+        "elite": elite_s, "bottleneck": bottleneck_s,
+        "civilization": civ_s, "attention_gap": attention_s,
+        "access": access_s, "survivability": surv_label,
+        "components": {
+            "Elite Capital": elite_s, "Strategic Bottleneck": bottleneck_s,
+            "Civilization Need": civ_s, "Attention Gap": attention_s,
+            "Market Access": access_s
+        }
+    }
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_frontier_data():
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    def _fetch_one(t):
+        tk = yf.Ticker(t)
+        info = tk.info or {}
+        hist = tk.history(period="1y")
+        return t, info, hist
+
+    prefetched = {}
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        futures = {pool.submit(_fetch_one, t): t for t in FRONTIER_UNIVERSE}
+        for f in as_completed(futures):
+            try:
+                t, info, hist = f.result()
+                prefetched[t] = (info, hist)
+            except Exception:
+                pass
+
+    rows = []
+    for t, meta in FRONTIER_UNIVERSE.items():
+        if t not in prefetched:
+            continue
+        try:
+            info, hist = prefetched[t]
+            price = safe(info, "currentPrice", "regularMarketPrice", default=0)
+            if not price and not hist.empty:
+                price = float(hist["Close"].iloc[-1])
+            if not price:
+                continue
+
+            fs = compute_frontier_score(info, hist, meta)
+            proj = cfis_projection(info, hist, fs["frontier"], fs["elite"], fs["attention_gap"])
+
+            mc = safe(info, "marketCap", default=0) or 0
+            mc_str = f"${mc/1e9:.1f}B" if mc >= 1e9 else (f"${mc/1e6:.0f}M" if mc >= 1e6 else "N/A")
+
+            rows.append({
+                "ticker": t, "name": (info.get("shortName") or info.get("longName", t))[:22],
+                "price": price, "market_cap": mc_str, "mc_raw": mc,
+                "sector": meta["sector"], "bottleneck": meta["bottleneck"],
+                "elite_backer": meta["elite"], "thesis": meta["thesis"],
+                "catalyst": meta["catalyst"], "asymmetry": meta["asymmetry"],
+                "frontier_score": fs["frontier"],
+                "elite_score": fs["elite"], "bottleneck_score": fs["bottleneck"],
+                "civ_score": fs["civilization"], "attention_gap": fs["attention_gap"],
+                "access_score": fs["access"], "survivability": fs["survivability"],
+                "proj_15d": proj["15d"], "proj_30d": proj["30d"], "proj_90d": proj["90d"],
+                "proj_direction": proj["direction"],
+                "components": fs["components"],
+            })
+        except Exception:
+            pass
+
+    rows.sort(key=lambda x: x["frontier_score"], reverse=True)
+    return rows
+
+
+# ─────────────────────────────────────────────────────────────
 # TOP 30
 # ─────────────────────────────────────────────────────────────
 # Why each stock is on this list — plain English
@@ -6763,6 +7044,7 @@ with st.sidebar:
         "5️⃣ Validation Engine",
         "6️⃣ Hunter Command by Louis Teo",
         "7️⃣ Options Intelligence by Louis Teo",
+        "8️⃣ CFIS Frontier by Louis Teo",
     ], label_visibility="collapsed")
     st.divider()
     st.caption("Data: Yahoo Finance · Cache: 5 min")
@@ -9424,4 +9706,192 @@ elif page == "7️⃣ Options Intelligence by Louis Teo":
                 </div>
             </div>
             """, unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────────────────────
+# PAGE 8: CFIS FRONTIER
+# ─────────────────────────────────────────────────────────────
+elif page == "8️⃣ CFIS Frontier by Louis Teo":
+
+    st.markdown("""
+    <div style="margin-bottom:8px">
+        <span style="font-size:32px;font-weight:900;color:#ffffff">🔭 CFIS Frontier</span>
+        <span style="font-size:14px;color:#FF9800;font-weight:700;margin-left:8px">Elite Capital Migration Index</span><br>
+        <span style="font-size:15px;color:#b0bcd4">Tracking what elite builders are quietly positioning for — before public consensus</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div style="background:#1a1500;border:1px solid #FF9800;border-radius:12px;padding:14px 18px;margin-bottom:16px">
+        <div style="font-size:10px;color:#FFC107;letter-spacing:2px;font-weight:700;margin-bottom:6px">PHILOSOPHY</div>
+        <div style="font-size:12px;color:#c9d1d9;line-height:1.8">
+            Don't chase what Wall Street already owns. <strong style="color:#FF9800">Find the bottleneck behind the next civilization need</strong>
+            — then check if elite builders (Musk, Thiel, Altman, a16z, Jensen) are already there.
+            The goal: discover the next Micron/Marvell-style asymmetry <strong>before consensus forms</strong>.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div style="background:#111827;border:1px solid #2e3550;border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:11px;color:#8a9bb5;line-height:1.7">
+        <strong style="color:#FF9800">📊 Elite Signal Score =</strong>
+        Elite Capital Movement <strong>25%</strong> +
+        Strategic Bottleneck <strong>25%</strong> +
+        Civilization Need <strong>20%</strong> +
+        Public Attention Gap <strong>15%</strong> +
+        Public Market Access <strong>15%</strong>.
+        <strong style="color:#c9d1d9">CFIS projections (15D/30D/90D)</strong> use real momentum + conviction through CFIS formula.
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Sector filter
+    all_sectors = sorted(set(m["sector"] for m in FRONTIER_UNIVERSE.values()))
+    sector_filter = st.multiselect("Filter by Sector", ["All"] + all_sectors, default=["All"], key="frontier_sector")
+
+    if st.button("🔭 SCAN FRONTIER OPPORTUNITIES", key="frontier_scan", type="primary", use_container_width=True):
+        st.session_state["frontier_triggered"] = True
+
+    if not st.session_state.get("frontier_triggered"):
+        st.info("Click to scan ~30 frontier stocks across energy, robotics, space, longevity, rare earths, fintech, water, defense, and AI infrastructure.")
+    else:
+        with st.spinner("Scanning frontier universe — fetching elite capital signals..."):
+            try:
+                frontier_rows = fetch_frontier_data()
+            except Exception as e:
+                st.error(f"Frontier scan failed: {e}")
+                frontier_rows = []
+
+        if frontier_rows:
+            if "All" not in sector_filter and sector_filter:
+                frontier_rows = [r for r in frontier_rows if r["sector"] in sector_filter]
+
+            # Summary metrics
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.markdown(f"""
+                <div style="background:#161b27;border-radius:12px;padding:16px;text-align:center">
+                    <div style="font-size:10px;color:#8a9bb5;letter-spacing:2px">STOCKS SCANNED</div>
+                    <div style="font-size:36px;font-weight:900;color:#ffffff">{len(frontier_rows)}</div>
+                </div>""", unsafe_allow_html=True)
+            with col2:
+                top_sector = max(set(r["sector"] for r in frontier_rows), key=lambda s: sum(1 for r in frontier_rows if r["sector"] == s)) if frontier_rows else "N/A"
+                st.markdown(f"""
+                <div style="background:#161b27;border-radius:12px;padding:16px;text-align:center">
+                    <div style="font-size:10px;color:#8a9bb5;letter-spacing:2px">TOP SECTOR</div>
+                    <div style="font-size:20px;font-weight:900;color:#FF9800;margin-top:8px">{top_sector}</div>
+                </div>""", unsafe_allow_html=True)
+            with col3:
+                avg_frontier = sum(r["frontier_score"] for r in frontier_rows) / len(frontier_rows) if frontier_rows else 0
+                st.markdown(f"""
+                <div style="background:#161b27;border-radius:12px;padding:16px;text-align:center">
+                    <div style="font-size:10px;color:#8a9bb5;letter-spacing:2px">AVG FRONTIER SCORE</div>
+                    <div style="font-size:36px;font-weight:900;color:#FF9800">{avg_frontier:.0f}</div>
+                </div>""", unsafe_allow_html=True)
+            with col4:
+                bullish_count = sum(1 for r in frontier_rows if r["proj_30d"] > 0)
+                st.markdown(f"""
+                <div style="background:#161b27;border-radius:12px;padding:16px;text-align:center">
+                    <div style="font-size:10px;color:#8a9bb5;letter-spacing:2px">BULLISH 30D</div>
+                    <div style="font-size:36px;font-weight:900;color:#4CAF50">{bullish_count}</div>
+                    <div style="font-size:11px;color:#4CAF50">of {len(frontier_rows)}</div>
+                </div>""", unsafe_allow_html=True)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # Render each frontier stock
+            for i, r in enumerate(frontier_rows):
+                fs_c = "#4CAF50" if r["frontier_score"] >= 70 else ("#FFC107" if r["frontier_score"] >= 55 else "#f44336")
+                p15_c = "#4CAF50" if r["proj_15d"] >= 0 else "#f44336"
+                p30_c = "#4CAF50" if r["proj_30d"] >= 0 else "#f44336"
+                p90_c = "#4CAF50" if r["proj_90d"] >= 0 else "#f44336"
+                surv_c = "#4CAF50" if "STRONG" in r["survivability"] else ("#66BB6A" if "OK" in r["survivability"] else "#FFC107")
+
+                sector_icons = {"Energy": "⚡", "Nuclear": "☢️", "Uranium": "☢️", "Solar": "☀️",
+                                "Robotics": "🤖", "Defense": "🛡️", "Defense Tech": "🛡️", "Defense IT": "🛡️",
+                                "Space": "🚀", "Critical Minerals": "⛏️", "Lithium": "🔋",
+                                "Biotech": "🧬", "Diagnostics": "🔬", "Gene Editing": "✂️",
+                                "Fintech": "💳", "Water": "💧", "Manufacturing": "🏭", "Industrial": "🏭",
+                                "Data Centre": "🖥️", "Networking": "🌐", "Semiconductors": "💎", "Memory": "💾"}
+                s_icon = sector_icons.get(r["sector"], "📊")
+
+                st.markdown(f"""
+                <div style="background:#161b27;border-radius:12px;padding:16px;margin-bottom:8px;
+                     border-left:4px solid {fs_c}">
+                    <div style="display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap">
+                        <div style="min-width:70px">
+                            <div style="font-size:11px;color:#8a9bb5">#{i+1}</div>
+                            <div style="font-size:18px;font-weight:900;color:#ffffff">{r['ticker']}</div>
+                            <div style="font-size:10px;color:#8a9bb5">{r['name']}</div>
+                            <div style="font-size:10px;color:#8a9bb5">${r['price']:.2f} · {r['market_cap']}</div>
+                        </div>
+                        <div style="min-width:65px;text-align:center">
+                            <div style="font-size:24px;font-weight:900;color:{fs_c}">{r['frontier_score']}</div>
+                            <div style="font-size:9px;color:#8a9bb5">FRONTIER</div>
+                        </div>
+                        <div style="min-width:80px;text-align:center">
+                            <div style="font-size:12px;color:#e8ecf4">{s_icon} {r['sector']}</div>
+                            <div style="font-size:9px;color:#8a9bb5">SECTOR</div>
+                        </div>
+                        <div style="min-width:50px;text-align:center">
+                            <div style="font-size:13px;font-weight:700;color:{p15_c}">{r['proj_15d']:+.1f}%</div>
+                            <div style="font-size:8px;color:#8a9bb5">CFIS 15D</div>
+                        </div>
+                        <div style="min-width:50px;text-align:center">
+                            <div style="font-size:13px;font-weight:700;color:{p30_c}">{r['proj_30d']:+.1f}%</div>
+                            <div style="font-size:8px;color:#8a9bb5">CFIS 30D</div>
+                        </div>
+                        <div style="min-width:50px;text-align:center">
+                            <div style="font-size:13px;font-weight:700;color:{p90_c}">{r['proj_90d']:+.1f}%</div>
+                            <div style="font-size:8px;color:#8a9bb5">CFIS 90D</div>
+                        </div>
+                        <div style="min-width:55px;text-align:center">
+                            <div style="font-size:11px;font-weight:700;color:{surv_c}">{r['survivability']}</div>
+                            <div style="font-size:8px;color:#8a9bb5">SURVIVE</div>
+                        </div>
+                    </div>
+                    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+                        <span style="background:#1a2744;border:1px solid #2e4a7a;border-radius:8px;padding:3px 10px;font-size:10px;color:#4FC3F7">⛓️ {r['bottleneck']}</span>
+                        <span style="background:#1a1a2e;border:1px solid #7c3aed;border-radius:8px;padding:3px 10px;font-size:10px;color:#b388ff">👤 {r['elite_backer']}</span>
+                        <span style="background:#0a2a0a;border:1px solid #1B5E20;border-radius:8px;padding:3px 10px;font-size:10px;color:#66d166">{r['proj_direction']}</span>
+                    </div>
+                    <div style="margin-top:8px;font-size:11px;color:#b0bcd4;line-height:1.6">{r['thesis']}</div>
+                    <div style="margin-top:6px;display:flex;gap:16px;flex-wrap:wrap;font-size:10px">
+                        <div><span style="color:#FFC107;font-weight:700">Catalyst:</span> <span style="color:#c9d1d9">{r['catalyst']}</span></div>
+                        <div><span style="color:#7c3aed;font-weight:700">3-5Y Asymmetry:</span> <span style="color:#c9d1d9">{r['asymmetry']}</span></div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            # Score breakdown expander
+            with st.expander("📊 Score Breakdown — All Frontier Stocks"):
+                breakdown_rows = []
+                for r in frontier_rows:
+                    breakdown_rows.append({
+                        "Ticker": r["ticker"],
+                        "Frontier": r["frontier_score"],
+                        "Elite Capital": r["elite_score"],
+                        "Bottleneck": r["bottleneck_score"],
+                        "Civ Need": r["civ_score"],
+                        "Attention Gap": r["attention_gap"],
+                        "Market Access": r["access_score"],
+                        "CFIS 30D": f"{r['proj_30d']:+.1f}%",
+                        "Sector": r["sector"],
+                    })
+                st.dataframe(pd.DataFrame(breakdown_rows), use_container_width=True, hide_index=True)
+
+            st.markdown("""
+            <div style="background:#0d1117;border:1px solid #21262d;border-radius:12px;padding:16px;margin-top:20px">
+                <div style="font-size:10px;color:#FFC107;letter-spacing:2px;font-weight:700;margin-bottom:8px">METHODOLOGY</div>
+                <div style="font-size:11px;color:#c9d1d9;line-height:2.0">
+                    <strong style="color:#FF9800">Elite Capital (25%)</strong> — Institutional ownership, insider holdings, known elite backer connections<br>
+                    <strong style="color:#FF7043">Strategic Bottleneck (25%)</strong> — Market cap (smaller = less consensus), gross margins, revenue growth<br>
+                    <strong style="color:#AB47BC">Civilization Need (20%)</strong> — Sector criticality: energy, water, defense, rare earths, longevity, space<br>
+                    <strong style="color:#4FC3F7">Attention Gap (15%)</strong> — Fewer analysts + lower volume = less public consensus = more opportunity<br>
+                    <strong style="color:#66BB6A">Market Access (15%)</strong> — Liquidity, market cap, spread — can you actually trade it?<br><br>
+                    <strong style="color:#c9d1d9">CFIS Projections</strong> — Forward 15D/30D/90D estimates from real momentum + CFIS conviction model<br>
+                    <strong style="color:#f44336">⚠️ These are frontier/speculative opportunities</strong> — higher risk, higher asymmetry. Position size accordingly.
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.warning("No frontier data available. Try again in a moment.")
 
