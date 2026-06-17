@@ -5658,6 +5658,8 @@ def compute_trend_strength(ticker):
 
         rsi_14 = _compute_rsi(hist["Close"], 14)
 
+        proj = cfis_projection(info, hist, trend_score, trend_score * 0.8, 50)
+
         return {
             "ticker": ticker,
             "price": round(price, 2),
@@ -5672,6 +5674,9 @@ def compute_trend_strength(ticker):
             "sma_50": round(sma_50, 2),
             "avg_vol": int(avg_vol),
             "market_cap": safe(info, "marketCap", default=0) or 0,
+            "proj_15d": proj["15d"],
+            "proj_30d": proj["30d"],
+            "proj_90d": proj["90d"],
         }
     except Exception:
         return None
@@ -5779,6 +5784,9 @@ def generate_options_signals(universe_tuple):
             "strike_hint": f"ATM or 1-2 strikes OTM (${c['price']:.0f} area)",
             "reasons": reasons,
             "avg_vol": c["avg_vol"],
+            "proj_15d": c.get("proj_15d", 0),
+            "proj_30d": c.get("proj_30d", 0),
+            "proj_90d": c.get("proj_90d", 0),
         })
 
     put_setups = []
@@ -5844,6 +5852,9 @@ def generate_options_signals(universe_tuple):
             "strike_hint": f"ATM or 1-2 strikes OTM (${c['price']:.0f} area)",
             "reasons": reasons,
             "avg_vol": c["avg_vol"],
+            "proj_15d": c.get("proj_15d", 0),
+            "proj_30d": c.get("proj_30d", 0),
+            "proj_90d": c.get("proj_90d", 0),
         })
 
     call_setups.sort(key=lambda x: x["conviction"], reverse=True)
@@ -9176,12 +9187,19 @@ elif page == "6️⃣ Hunter Command by Louis Teo":
                         <div style="min-width:50px;text-align:center">CAP</div>
                         <div style="min-width:50px;text-align:center">FORCE</div>
                         <div style="min-width:50px;text-align:center">TIMING</div>
-                        <div style="min-width:65px;text-align:center">CFIS 30D</div>
+                        <div style="min-width:50px;text-align:center">CFIS 15D</div>
+                        <div style="min-width:50px;text-align:center">CFIS 30D</div>
+                        <div style="min-width:50px;text-align:center">CFIS 90D</div>
                         <div style="min-width:80px;text-align:center">ACTION</div>
                     </div>
                     """, unsafe_allow_html=True)
                     for i, r in enumerate(go_stocks, 1):
-                        ret_c = "#4CAF50" if r["expected_ret"] > 0 else "#ef5350"
+                        p15 = r.get("proj_15d", 0)
+                        p30 = r.get("proj_30d", r.get("expected_ret", 0))
+                        p90 = r.get("proj_90d", 0)
+                        p15_c = "#4CAF50" if p15 >= 0 else "#ef5350"
+                        p30_c = "#4CAF50" if p30 >= 0 else "#ef5350"
+                        p90_c = "#4CAF50" if p90 >= 0 else "#ef5350"
                         act = r.get("action", "GO")
                         act_c = r.get("action_color", "#4CAF50")
                         is_strong = act == "STRONG GO"
@@ -9197,7 +9215,9 @@ elif page == "6️⃣ Hunter Command by Louis Teo":
                             <div style="min-width:50px;text-align:center;font-size:14px;font-weight:700;color:#FFC107">{r.get('cap_score',0):.0f}</div>
                             <div style="min-width:50px;text-align:center;font-size:14px;font-weight:700;color:#AB47BC">{r.get('force_score',0):.0f}</div>
                             <div style="min-width:50px;text-align:center;font-size:14px;font-weight:700;color:#29B6F6">{r.get('timing_score',0):.0f}</div>
-                            <div style="min-width:65px;text-align:center;font-size:14px;font-weight:700;color:{ret_c}">{r['expected_ret']:+.0f}%</div>
+                            <div style="min-width:50px;text-align:center;font-size:13px;font-weight:700;color:{p15_c}">{p15:+.1f}%</div>
+                            <div style="min-width:50px;text-align:center;font-size:13px;font-weight:700;color:{p30_c}">{p30:+.1f}%</div>
+                            <div style="min-width:50px;text-align:center;font-size:13px;font-weight:700;color:{p90_c}">{p90:+.1f}%</div>
                             <div style="min-width:80px;text-align:center"><span style="background:{act_c};color:#000;font-weight:900;font-size:{'9' if is_strong else '10'}px;padding:3px 8px;border-radius:10px">{'⚡ STRONG GO' if is_strong else '🔥 GO'}</span></div>
                         </div>
                         """, unsafe_allow_html=True)
@@ -9217,13 +9237,19 @@ elif page == "6️⃣ Hunter Command by Louis Teo":
                 else:
                     for r in wait_stocks:
                         wait_reason = r.get("action_desc", "Conviction building — test with small allocation")
+                        wp15 = r.get("proj_15d", 0)
+                        wp30 = r.get("proj_30d", r.get("expected_ret", 0))
+                        wp90 = r.get("proj_90d", 0)
+                        wp30_c = "#4CAF50" if wp30 >= 0 else "#f44336"
+                        wp90_c = "#4CAF50" if wp90 >= 0 else "#f44336"
                         st.markdown(f"""
                         <div style="display:flex;gap:8px;padding:10px 12px;background:#1a1a0a;border:1px solid #33291a;border-radius:8px;margin-bottom:4px;align-items:center">
                             <div style="min-width:60px;font-size:14px;font-weight:800;color:#ffffff">{r['ticker']}</div>
                             <div style="min-width:45px;text-align:center;font-size:16px;font-weight:900;color:#FFC107">{r['conviction']:.0f}</div>
                             <div style="min-width:45px;text-align:center;font-size:14px;font-weight:700;color:#FFC107">{r.get('conviction_score',0):.0f}</div>
+                            <div style="min-width:50px;text-align:center;font-size:12px;font-weight:700;color:{wp30_c}">{wp30:+.1f}%</div>
+                            <div style="min-width:50px;text-align:center;font-size:12px;font-weight:700;color:{wp90_c}">{wp90:+.1f}%</div>
                             <div style="flex:1;font-size:11px;color:#b0a87a">{r['name']} — {r.get('theme_icon','')} {r.get('theme','')}</div>
-                            <div style="font-size:11px;color:#FFD54F;max-width:300px">{wait_reason}</div>
                             <div style="min-width:40px;text-align:center"><span style="background:#FFC107;color:#000;font-weight:900;font-size:10px;padding:3px 8px;border-radius:10px">PILOT</span></div>
                         </div>
                         """, unsafe_allow_html=True)
@@ -9248,7 +9274,9 @@ elif page == "6️⃣ Hunter Command by Louis Teo":
                     <div style="min-width:50px;text-align:center">CAP</div>
                     <div style="min-width:50px;text-align:center">FORCE</div>
                     <div style="min-width:50px;text-align:center">CROWD</div>
-                    <div style="min-width:65px;text-align:center">THEME</div>
+                    <div style="min-width:45px;text-align:center">15D</div>
+                    <div style="min-width:45px;text-align:center">30D</div>
+                    <div style="min-width:45px;text-align:center">90D</div>
                     <div style="min-width:50px;text-align:center">ACTION</div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -9261,6 +9289,9 @@ elif page == "6️⃣ Hunter Command by Louis Teo":
                     is_go = act in ("STRONG GO", "GO")
                     bg = "#0a1a0a" if is_go else ("#1a1a0a" if act == "PILOT" else "#0d1117")
                     act_label = "⚡ S-GO" if act == "STRONG GO" else act
+                    u15 = r.get("proj_15d", 0)
+                    u30 = r.get("proj_30d", r.get("expected_ret", 0))
+                    u90 = r.get("proj_90d", 0)
                     st.markdown(f"""
                     <div style="display:flex;gap:6px;padding:6px 12px;background:{bg};border-radius:6px;margin-bottom:2px;align-items:center;border-left:3px solid {act_c}">
                         <div style="min-width:28px;font-size:12px;font-weight:700;color:#8a9bb5">{i}</div>
@@ -9271,7 +9302,9 @@ elif page == "6️⃣ Hunter Command by Louis Teo":
                         <div style="min-width:50px;text-align:center;font-size:12px;color:#FFC107">{r.get('cap_score',0):.0f}</div>
                         <div style="min-width:50px;text-align:center;font-size:12px;color:#AB47BC">{r.get('force_score',0):.0f}</div>
                         <div style="min-width:50px;text-align:center;font-size:12px;color:{'#4CAF50' if r.get('crowding_score',50)<60 else '#ef5350'}">{r.get('crowding_score',0):.0f}</div>
-                        <div style="min-width:65px;text-align:center;font-size:10px;color:#8a9bb5">{r.get('theme_icon','')} {r.get('theme','')[:12]}</div>
+                        <div style="min-width:45px;text-align:center;font-size:11px;font-weight:700;color:{'#4CAF50' if u15>=0 else '#ef5350'}">{u15:+.1f}%</div>
+                        <div style="min-width:45px;text-align:center;font-size:11px;font-weight:700;color:{'#4CAF50' if u30>=0 else '#ef5350'}">{u30:+.1f}%</div>
+                        <div style="min-width:45px;text-align:center;font-size:11px;font-weight:700;color:{'#4CAF50' if u90>=0 else '#ef5350'}">{u90:+.1f}%</div>
                         <div style="min-width:50px;text-align:center"><span style="background:{act_c};color:#000;font-weight:900;font-size:9px;padding:2px 6px;border-radius:8px">{act_label}</span></div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -9297,6 +9330,41 @@ elif page == "6️⃣ Hunter Command by Louis Teo":
                         enriched = fetch_enriched_data(hunter_ticker)
                         hunter = compute_hunter(info, hist, scores, cm, enriched)
                         render_hunter(hunter, hunter_ticker, cm)
+
+                        # CFIS Forward Projections
+                        conv_s = hunter.get("conviction", 0) if not isinstance(hunter.get("conviction"), dict) else hunter["conviction"].get("score", 0)
+                        crowd_s = hunter.get("crowding", {}).get("score", 50) if isinstance(hunter.get("crowding"), dict) else 50
+                        da_proj = cfis_projection(info, hist, hunter["hunter_score"], conv_s, crowd_s)
+                        dp15_c = "#4CAF50" if da_proj["15d"] >= 0 else "#f44336"
+                        dp30_c = "#4CAF50" if da_proj["30d"] >= 0 else "#f44336"
+                        dp90_c = "#4CAF50" if da_proj["90d"] >= 0 else "#f44336"
+                        dir_c = "#4CAF50" if "BULL" in da_proj["direction"] else ("#f44336" if "BEAR" in da_proj["direction"] else "#FFC107")
+                        st.markdown(f"""
+                        <div style="background:linear-gradient(135deg,#0a1a2e,#0a2a1e);border:2px solid #06b6d4;border-radius:14px;padding:20px;margin:16px 0">
+                            <div style="font-size:12px;color:#06b6d4;letter-spacing:2px;font-weight:700;margin-bottom:12px">📈 CFIS 3.0 FORWARD PROJECTIONS</div>
+                            <div style="display:flex;gap:20px;flex-wrap:wrap;justify-content:center">
+                                <div style="text-align:center;min-width:100px">
+                                    <div style="font-size:28px;font-weight:900;color:{dp15_c}">{da_proj['15d']:+.1f}%</div>
+                                    <div style="font-size:10px;color:#8a9bb5;letter-spacing:2px">CFIS 15-DAY</div>
+                                </div>
+                                <div style="text-align:center;min-width:100px">
+                                    <div style="font-size:28px;font-weight:900;color:{dp30_c}">{da_proj['30d']:+.1f}%</div>
+                                    <div style="font-size:10px;color:#8a9bb5;letter-spacing:2px">CFIS 30-DAY</div>
+                                </div>
+                                <div style="text-align:center;min-width:100px">
+                                    <div style="font-size:28px;font-weight:900;color:{dp90_c}">{da_proj['90d']:+.1f}%</div>
+                                    <div style="font-size:10px;color:#8a9bb5;letter-spacing:2px">CFIS 90-DAY</div>
+                                </div>
+                                <div style="text-align:center;min-width:100px">
+                                    <div style="font-size:18px;font-weight:800;color:{dir_c};margin-top:6px">{da_proj['direction']}</div>
+                                    <div style="font-size:10px;color:#8a9bb5;letter-spacing:2px">DIRECTION</div>
+                                </div>
+                            </div>
+                            <div style="font-size:10px;color:#8a9bb5;text-align:center;margin-top:12px">
+                                Built from real momentum (5D/15D/30D) + RSI {da_proj['rsi']} + SMA alignment + Volume {da_proj['vol_ratio']}x + CFIS conviction
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
 
                         st.markdown("---")
                         with st.spinner("Running Capital Flow Intelligence…"):
@@ -9591,7 +9659,21 @@ elif page == "7️⃣ Options Intelligence by Louis Teo":
                                 <div style="background:#4CAF5022;color:#4CAF50;padding:4px 12px;border-radius:8px;font-size:12px;font-weight:700;display:inline-block">📈 CALL</div>
                             </div>
                         </div>
-                        <div style="margin-top:12px;display:flex;gap:20px;flex-wrap:wrap">
+                        <div style="margin-top:10px;display:flex;gap:12px;flex-wrap:wrap">
+                            <div style="background:#0a2a1a;border:1px solid #1B5E20;border-radius:8px;padding:8px 14px">
+                                <div style="font-size:9px;color:#66BB6A;letter-spacing:1px;font-weight:700">CFIS 15D PROJ</div>
+                                <div style="font-size:15px;font-weight:900;color:{'#4CAF50' if setup.get('proj_15d',0)>=0 else '#f44336'}">{setup.get('proj_15d',0):+.1f}%</div>
+                            </div>
+                            <div style="background:#0a2a1a;border:1px solid #1B5E20;border-radius:8px;padding:8px 14px">
+                                <div style="font-size:9px;color:#66BB6A;letter-spacing:1px;font-weight:700">CFIS 30D PROJ</div>
+                                <div style="font-size:15px;font-weight:900;color:{'#4CAF50' if setup.get('proj_30d',0)>=0 else '#f44336'}">{setup.get('proj_30d',0):+.1f}%</div>
+                            </div>
+                            <div style="background:#0a2a1a;border:1px solid #1B5E20;border-radius:8px;padding:8px 14px">
+                                <div style="font-size:9px;color:#66BB6A;letter-spacing:1px;font-weight:700">CFIS 90D PROJ</div>
+                                <div style="font-size:15px;font-weight:900;color:{'#4CAF50' if setup.get('proj_90d',0)>=0 else '#f44336'}">{setup.get('proj_90d',0):+.1f}%</div>
+                            </div>
+                        </div>
+                        <div style="margin-top:10px;display:flex;gap:20px;flex-wrap:wrap">
                             <div style="background:#0d1117;border-radius:8px;padding:8px 14px">
                                 <div style="font-size:9px;color:#8a9bb5;letter-spacing:1px">ENTRY WINDOW</div>
                                 <div style="font-size:13px;font-weight:700;color:#FFC107">{setup['entry_window']}</div>
@@ -9665,7 +9747,21 @@ elif page == "7️⃣ Options Intelligence by Louis Teo":
                                 <div style="background:#f4433622;color:#f44336;padding:4px 12px;border-radius:8px;font-size:12px;font-weight:700;display:inline-block">📉 PUT</div>
                             </div>
                         </div>
-                        <div style="margin-top:12px;display:flex;gap:20px;flex-wrap:wrap">
+                        <div style="margin-top:10px;display:flex;gap:12px;flex-wrap:wrap">
+                            <div style="background:#2a0a0a;border:1px solid #5a1a1a;border-radius:8px;padding:8px 14px">
+                                <div style="font-size:9px;color:#ef9a9a;letter-spacing:1px;font-weight:700">CFIS 15D PROJ</div>
+                                <div style="font-size:15px;font-weight:900;color:{'#f44336' if setup.get('proj_15d',0)<=0 else '#4CAF50'}">{setup.get('proj_15d',0):+.1f}%</div>
+                            </div>
+                            <div style="background:#2a0a0a;border:1px solid #5a1a1a;border-radius:8px;padding:8px 14px">
+                                <div style="font-size:9px;color:#ef9a9a;letter-spacing:1px;font-weight:700">CFIS 30D PROJ</div>
+                                <div style="font-size:15px;font-weight:900;color:{'#f44336' if setup.get('proj_30d',0)<=0 else '#4CAF50'}">{setup.get('proj_30d',0):+.1f}%</div>
+                            </div>
+                            <div style="background:#2a0a0a;border:1px solid #5a1a1a;border-radius:8px;padding:8px 14px">
+                                <div style="font-size:9px;color:#ef9a9a;letter-spacing:1px;font-weight:700">CFIS 90D PROJ</div>
+                                <div style="font-size:15px;font-weight:900;color:{'#f44336' if setup.get('proj_90d',0)<=0 else '#4CAF50'}">{setup.get('proj_90d',0):+.1f}%</div>
+                            </div>
+                        </div>
+                        <div style="margin-top:10px;display:flex;gap:20px;flex-wrap:wrap">
                             <div style="background:#0d1117;border-radius:8px;padding:8px 14px">
                                 <div style="font-size:9px;color:#8a9bb5;letter-spacing:1px">ENTRY WINDOW</div>
                                 <div style="font-size:13px;font-weight:700;color:#FFC107">{setup['entry_window']}</div>
