@@ -21,6 +21,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from services.ticker_universe import fetch_fmp_us_universe, build_scanner_universe
+from services.data_providers import (
+    fmp_request, finnhub_request, edgar_request,
+    get_cik, fetch_finviz_quote,
+)
 
 # ─────────────────────────────────────────────────────────────
 # PAGE CONFIG
@@ -418,87 +422,21 @@ if "api_warnings_shown" not in st.session_state:
     if _missing:
         st.sidebar.warning(f"Missing API keys: {', '.join(_missing)}. Some features will be limited. Set them in .env or .streamlit/secrets.toml.")
 
-_CIK_CACHE = {}
-
 def _fmp(endpoint, params=None):
-    if not FMP_KEY:
-        return None
-    p = params or {}
-    p["apikey"] = FMP_KEY
-    try:
-        r = requests.get(f"https://financialmodelingprep.com/stable/{endpoint}", params=p, timeout=10)
-        if r.status_code == 200:
-            return r.json()
-    except Exception:
-        pass
-    return None
+    return fmp_request(endpoint, FMP_KEY, params)
 
 def _finnhub(endpoint, params=None):
-    if not FINNHUB_KEY:
-        return None
-    p = params or {}
-    p["token"] = FINNHUB_KEY
-    try:
-        r = requests.get(f"https://finnhub.io/api/v1/{endpoint}", params=p, timeout=10)
-        if r.status_code == 200:
-            return r.json()
-    except Exception:
-        pass
-    return None
+    return finnhub_request(endpoint, FINNHUB_KEY, params)
 
 def _edgar(path):
-    try:
-        r = requests.get(f"https://data.sec.gov/{path}", headers={"User-Agent": EDGAR_UA}, timeout=10)
-        if r.status_code == 200:
-            return r.json()
-    except Exception:
-        pass
-    return None
+    return edgar_request(path)
 
 def _get_cik(ticker):
-    t = ticker.upper().replace(".TO", "").replace(".L", "")
-    if t in _CIK_CACHE:
-        return _CIK_CACHE[t]
-    try:
-        r = requests.get("https://efts.sec.gov/LATEST/search-index?q=%22" + url_quote(t) + "%22&dateRange=custom&startdt=2020-01-01&forms=10-K",
-                         headers={"User-Agent": EDGAR_UA}, timeout=8)
-        if r.status_code == 200:
-            data = r.json()
-            hits = data.get("hits", {}).get("hits", [])
-            if hits:
-                source = hits[0].get("_source", {})
-                ciks = source.get("ciks", [])
-                cik = str(ciks[0]) if ciks else str(source.get("entity_id", ""))
-                if cik:
-                    _CIK_CACHE[t] = cik.zfill(10)
-                    return _CIK_CACHE[t]
-    except Exception:
-        pass
-    return None
+    return get_cik(ticker)
 
 @st.cache_data(ttl=3600)
 def fetch_finviz(ticker):
-    try:
-        headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) CFIS-X/2.0"}
-        r = requests.get(f"https://finviz.com/quote.ashx?t={ticker}&ty=c&p=d&b=1", headers=headers, timeout=10)
-        if r.status_code != 200:
-            return {}
-        from html.parser import HTMLParser
-        text = r.text
-        data = {}
-        import re as _re
-        rows = _re.findall(r'<div class="snapshot-td-label">(.*?)</div>.*?<div class="snapshot-td-content"><b>(.*?)</b></div>', text, _re.DOTALL)
-        if not rows:
-            rows = _re.findall(r'<td[^>]*class="snapshot-td2-cp"[^>]*>(.*?)</td>\s*<td[^>]*class="snapshot-td2"[^>]*><b>(.*?)</b></td>', text, _re.DOTALL)
-        if not rows:
-            rows = _re.findall(r'<td[^>]*>([\w\s/%.]+)</td>\s*<td[^>]*><b>([^<]+)</b></td>', text, _re.DOTALL)
-        for label, value in rows:
-            label = _re.sub(r'<[^>]+>', '', label).strip()
-            value = _re.sub(r'<[^>]+>', '', value).strip()
-            data[label] = value
-        return data
-    except Exception:
-        return {}
+    return fetch_finviz_quote(ticker)
 
 def _parse_finviz_pct(val):
     if not val or val == "-":
