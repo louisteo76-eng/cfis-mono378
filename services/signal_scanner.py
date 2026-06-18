@@ -13,10 +13,11 @@ Usage from app.py:
   save_scan_results(rows)
 
   # On page load (instead of scanning):
-  signals = load_latest_signals(limit=300)
+  signals = load_latest_signals()
 """
 
 import logging
+import os
 from datetime import date, datetime, timezone
 
 from services.supabase_client import get_supabase_client
@@ -95,7 +96,7 @@ def save_scan_results(rows):
     return total
 
 
-def load_latest_signals(scan_date=None, limit=300):
+def load_latest_signals(scan_date=None, limit=None):
     """Read the most recent signals from Supabase.
 
     Returns list of dicts matching _build_row() key names so existing
@@ -108,6 +109,8 @@ def load_latest_signals(scan_date=None, limit=300):
 
     if scan_date is None:
         scan_date = date.today().isoformat()
+    if limit is None:
+        limit = int(os.environ.get("CFIS_STORED_SIGNAL_LIMIT", "9000"))
 
     try:
         result = (

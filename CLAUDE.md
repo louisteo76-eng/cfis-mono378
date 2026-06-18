@@ -113,6 +113,8 @@ weakness to fix safely later.
 - Handle errors.
 - Avoid duplicate code.
 - Do not run 9000-symbol scans during Streamlit page refresh.
+- Full-market tables must read precomputed Supabase `signal_table` rows.
+- Live Streamlit fallback scans are capped by `CFIS_LIVE_SCAN_LIMIT`.
 
 ## Documentation Index
 

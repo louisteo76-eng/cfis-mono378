@@ -16,7 +16,8 @@
 
 - Preserve UI.
 - Keep `services/` as the collaboration baseline; do not collapse back.
-- Keep page scans capped at 300.
+- Keep live page scans capped by `CFIS_LIVE_SCAN_LIMIT`.
+- Read up to `CFIS_STORED_SIGNAL_LIMIT` precomputed rows from `signal_table`.
 - Activate Supabase: create project, run migrations, add keys to secrets.
 - Verify `scan_or_load()` works end-to-end with Supabase.
 

@@ -17,6 +17,7 @@
 - Do not expose API keys.
 - Do not assume optional APIs are configured.
 - Do not run 9000-symbol scans during Streamlit page refresh.
+- To show 9000-symbol tables, read stored Supabase signals; do not calculate them live.
 - Do not delete hardcoded lists before replacements are proven.
 - Do not reverse existing extracted `services/` modules back into `app.py`.
 - If docs and working tree disagree, inspect `git log --oneline -8` and update

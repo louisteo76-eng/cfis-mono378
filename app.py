@@ -412,6 +412,8 @@ def _get_api_key(name):
 FMP_KEY = _get_api_key("FMP_API_KEY")
 FINNHUB_KEY = _get_api_key("FINNHUB_API_KEY")
 EDGAR_UA = "CFIS-X/2.0 (louisteo76@gmail.com)"
+LIVE_SCAN_LIMIT = int(os.environ.get("CFIS_LIVE_SCAN_LIMIT", "300"))
+STORED_SIGNAL_LIMIT = int(os.environ.get("CFIS_STORED_SIGNAL_LIMIT", "9000"))
 
 if "api_warnings_shown" not in st.session_state:
     st.session_state["api_warnings_shown"] = True
@@ -5956,7 +5958,7 @@ def get_scanner_universe(max_tickers=300):
 
 def get_opportunity_universe():
     """Returns the active scanner universe — expanded when FMP is available."""
-    return get_scanner_universe(300)
+    return get_scanner_universe(LIVE_SCAN_LIMIT)
 
 
 def _prefetch_yfinance(tickers):
@@ -6222,11 +6224,11 @@ def scan_opportunities(universe_tuple):
 def scan_or_load(universe_tuple):
     """Load today's stored signals if available, otherwise scan live.
 
-    This avoids re-scanning 300 stocks on every page refresh when
-    Supabase has today's pre-computed results.
+    Stored signals can represent the full market. Live fallback stays capped
+    so Streamlit never tries to calculate 9000 stocks during page refresh.
     """
     if has_todays_scan():
-        stored = load_latest_signals(limit=len(universe_tuple))
+        stored = load_latest_signals(limit=max(len(universe_tuple), STORED_SIGNAL_LIMIT))
         if stored:
             return stored
     return scan_opportunities(universe_tuple)

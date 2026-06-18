@@ -29,8 +29,9 @@ These functions call FMP stock screener for:
 - NASDAQ
 - AMEX
 
-Current page scans are capped and do not process all 9000+ symbols inside
-Streamlit page refresh.
+Current live page scans are capped and do not process all 9000+ symbols inside
+Streamlit page refresh. When Supabase has precomputed `signal_table` rows,
+`scan_or_load()` can read up to `CFIS_STORED_SIGNAL_LIMIT` rows, default 9000.
 
 ## Target Universe
 
@@ -48,18 +49,23 @@ Target storage:
 ```text
 FMP (9000+ stocks) → ticker_universe.py → Supabase ticker_master (cache)
                                         ↓
-                            build_scanner_universe() → 300 tickers max
+                            build_scanner_universe() → live fallback cap
                                         ↓
                             scan_opportunities() → signal_scanner.py → Supabase signal_table
                                         ↓
-                            scan_or_load() → pages read stored signals or scan live
+                            scan_or_load() → pages read stored full-market signals or scan capped live fallback
 ```
 
 - `fetch_us_universe()`: Supabase first, FMP fallback
-- `build_scanner_universe()`: curated FULL_UNIVERSE + FMP top market cap, capped at 300
+- `build_scanner_universe()`: curated FULL_UNIVERSE + FMP top market cap, capped by `CFIS_LIVE_SCAN_LIMIT` for live scans
 - `scan_or_load()`: loads today's stored signals if available, else scans live
 - Market Health search augmented with FMP/Supabase universe options
 - `normalize_ticker_input()`: resolves company names and raw symbols
+
+## Limits
+
+- `CFIS_LIVE_SCAN_LIMIT`: default `300`; protects Streamlit from full-market live scans.
+- `CFIS_STORED_SIGNAL_LIMIT`: default `9000`; max stored rows to read from Supabase.
 
 ## Do Not Break
 

@@ -77,7 +77,7 @@ def fetch_fmp_us_universe(api_key):
 
 # ── Supabase ticker_master ──────────────────────────────────
 
-def load_from_supabase(limit=5000):
+def load_from_supabase(limit=10000):
     """Read ticker_master from Supabase. Returns list of dicts or []."""
     client = get_supabase_client()
     if client is None:
