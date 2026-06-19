@@ -6144,7 +6144,10 @@ def _build_row(t, info, hist, enriched=None):
     proj = cfis_projection(info, hist, hs, conv_s, crowd_s)
 
     # Institutional Macro & Strategic Flow
-    strat = compute_strategic_flow(t, info, hist, enriched)
+    try:
+        strat = compute_strategic_flow(t, info, hist, enriched)
+    except Exception:
+        strat = {"score": 0, "label": "", "dominant_force": "", "capital_flow": "", "confidence": 0, "themes": []}
 
     narr = hunter["narrative"]
     return {
@@ -6797,7 +6800,7 @@ def fetch_frontier_data():
                 continue
 
             fs = compute_frontier_score(info, hist, meta)
-            proj = cfis_projection(info, hist, fs["frontier"], fs["pressure"], fs["hiddenness"])
+            proj = cfis_projection(info, hist, fs["frontier"], fs["catalyst"], 100 - fs["hiddenness"])
 
             mc = safe(info, "marketCap", default=0) or 0
             mc_str = f"${mc/1e9:.1f}B" if mc >= 1e9 else (f"${mc/1e6:.0f}M" if mc >= 1e6 else "N/A")
