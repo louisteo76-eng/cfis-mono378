@@ -129,3 +129,4 @@ After major changes, update `/docs/*.md`.
 - `docs/06_STREAMLIT_APP_STRUCTURE.md`
 - `docs/07_ROADMAP.md`
 - `docs/08_DO_NOT_BREAK_RULES.md`
+- `docs/09_INSTITUTIONAL_STRATEGIC_FLOW.md`

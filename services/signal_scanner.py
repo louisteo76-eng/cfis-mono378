@@ -56,6 +56,12 @@ def _row_to_signal(row):
         "risk_score": row.get("risk"),
         "quality_score": row.get("quality"),
         "data_quality": row.get("data_quality", 0),
+        "strategic_score": row.get("strategic_score"),
+        "strategic_label": row.get("strategic_label"),
+        "strategic_dominant": row.get("strategic_dominant"),
+        "strategic_capital_flow": row.get("strategic_capital_flow"),
+        "strategic_confidence": row.get("strategic_confidence"),
+        "strategic_themes": row.get("strategic_themes"),
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -170,6 +176,12 @@ def _signal_to_row(s):
         "action_desc": "",
         "hunt_alert": False,
         "data_quality": s.get("data_quality", 0),
+        "strategic_score": s.get("strategic_score", 0),
+        "strategic_label": s.get("strategic_label", ""),
+        "strategic_dominant": s.get("strategic_dominant", ""),
+        "strategic_capital_flow": s.get("strategic_capital_flow", ""),
+        "strategic_confidence": s.get("strategic_confidence", 0),
+        "strategic_themes": s.get("strategic_themes", ""),
     }
 
 

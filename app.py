@@ -26,6 +26,7 @@ from services.data_providers import (
     get_cik, fetch_finviz_quote,
 )
 from services.signal_scanner import save_scan_results, load_latest_signals, has_todays_scan
+from services.strategic_flow import compute_strategic_flow
 
 # ─────────────────────────────────────────────────────────────
 # PAGE CONFIG
@@ -6142,6 +6143,9 @@ def _build_row(t, info, hist, enriched=None):
     crowd_s = hunter.get("crowding", {}).get("score", 0) if isinstance(hunter.get("crowding"), dict) else 100
     proj = cfis_projection(info, hist, hs, conv_s, crowd_s)
 
+    # Institutional Macro & Strategic Flow
+    strat = compute_strategic_flow(t, info, hist, enriched)
+
     narr = hunter["narrative"]
     return {
         "ticker": t, "name": name, "price": price,
@@ -6175,6 +6179,12 @@ def _build_row(t, info, hist, enriched=None):
         "action_icon": hunter.get("action_icon", "❌"),
         "action_desc": hunter.get("action_desc", ""),
         "hunt_alert": hunter.get("hunt_alert", False),
+        "strategic_score": strat["score"],
+        "strategic_label": strat["label"],
+        "strategic_dominant": strat["dominant_force"],
+        "strategic_capital_flow": strat["capital_flow"],
+        "strategic_confidence": strat["confidence"],
+        "strategic_themes": ", ".join(strat.get("themes", [])[:3]),
     }
 
 
@@ -6495,123 +6505,254 @@ FRONTIER_UNIVERSE = {
     "ACLS":  {"sector": "Semiconductors", "bottleneck": "Ion implant equipment", "elite": "Chip equipment chain",
               "thesis": "Axcelis Technologies — ion implantation for SiC power chips. EV + AI power management.",
               "catalyst": "SiC adoption in EVs + AI power delivery", "asymmetry": "Niche monopoly in a critical chip-making step"},
+    # ── AI / CLOUD HYPERSCALE ──
+    "NVDA":  {"sector": "AI Compute", "bottleneck": "GPU monopoly for AI training", "elite": "Every sovereign fund + hyperscaler",
+              "thesis": "NVIDIA — 90%+ share of AI training GPUs. CUDA ecosystem lock-in. Data centre revenue >$100B run-rate.",
+              "catalyst": "Blackwell ramp + sovereign AI buildout", "asymmetry": "AI capex is non-discretionary — you buy NVIDIA or you fall behind"},
+    "MSFT":  {"sector": "Cloud / AI", "bottleneck": "Enterprise AI + cloud infra", "elite": "Largest pension/SWF holding globally",
+              "thesis": "Microsoft — Azure + OpenAI partnership + Copilot across Office. Enterprise AI monetisation leader.",
+              "catalyst": "Copilot revenue inflection + Azure AI workloads", "asymmetry": "400M Office users = instant AI distribution"},
+    "GOOGL": {"sector": "Cloud / AI", "bottleneck": "Search + AI infrastructure", "elite": "Institutional mega-cap core",
+              "thesis": "Alphabet — Gemini AI + Google Cloud + YouTube. Search monopoly funds massive AI R&D.",
+              "catalyst": "Gemini integration + cloud AI revenue growth", "asymmetry": "Owns more AI training data than anyone alive"},
+    "AMZN":  {"sector": "Cloud / AI", "bottleneck": "Cloud infrastructure (AWS)", "elite": "Institutional mega-cap core",
+              "thesis": "Amazon — AWS is the backbone of the internet. Trainium custom chips + Bedrock AI platform.",
+              "catalyst": "AWS re-acceleration + Trainium adoption", "asymmetry": "AWS runs 30%+ of global cloud — too embedded to displace"},
+    "META":  {"sector": "AI / Social", "bottleneck": "AI-powered advertising + open-source LLMs", "elite": "Institutional mega-cap core",
+              "thesis": "Meta — Llama open-source AI + 3B daily users + Reality Labs. Largest open-weight AI model provider.",
+              "catalyst": "Llama monetisation + AI-driven ad revenue", "asymmetry": "3B users = largest AI feedback loop on Earth"},
+    "ORCL":  {"sector": "Cloud / AI", "bottleneck": "Enterprise database + cloud AI", "elite": "SWF accumulation (Saudi PIF)",
+              "thesis": "Oracle — OCI cloud growing fastest. Multi-cloud AI training deals with NVIDIA, OpenAI, xAI.",
+              "catalyst": "OCI AI capacity backlog + sovereign cloud deals", "asymmetry": "$100B+ remaining performance obligations"},
+    # ── SEMICONDUCTORS — CHOKEPOINT SUPPLY CHAIN ──
+    "TSM":   {"sector": "Semiconductors", "bottleneck": "Advanced chip fabrication monopoly", "elite": "Buffett position + sovereign strategic",
+              "thesis": "TSMC — fabricates 90%+ of advanced chips globally. Apple, NVIDIA, AMD all depend on TSMC.",
+              "catalyst": "Arizona fab ramp + AI chip demand surge", "asymmetry": "No TSMC = no AI, no smartphones, no modern military"},
+    "ASML":  {"sector": "Semiconductors", "bottleneck": "EUV lithography monopoly", "elite": "European strategic asset",
+              "thesis": "ASML — sole manufacturer of EUV machines. Every advanced chip on Earth requires ASML equipment.",
+              "catalyst": "High-NA EUV adoption + export control dynamics", "asymmetry": "Absolute monopoly — no alternative exists or is coming"},
+    # ── DEFENSE PRIMES ──
+    "LMT":   {"sector": "Defense", "bottleneck": "F-35 + missile systems", "elite": "US DoD prime contractor",
+              "thesis": "Lockheed Martin — #1 defense contractor. F-35, Javelin, THAAD, hypersonics, space systems.",
+              "catalyst": "NATO rearmament + Indo-Pacific deterrence spend", "asymmetry": "Global defense spend at Cold War highs, LMT is the main supplier"},
+    "RTX":   {"sector": "Defense", "bottleneck": "Missile defense + jet engines", "elite": "US DoD prime contractor",
+              "thesis": "RTX — Raytheon missiles + Pratt & Whitney engines. Patriot, Stinger, AMRAAM demand surging.",
+              "catalyst": "Missile replenishment cycle + F-35 engine ramp", "asymmetry": "Global ammunition stockpiles are depleted — restocking takes a decade"},
+    "NOC":   {"sector": "Defense", "bottleneck": "Nuclear deterrence + stealth", "elite": "US strategic weapons",
+              "thesis": "Northrop Grumman — B-21 Raider bomber, Sentinel ICBM, James Webb telescope. Nuclear triad backbone.",
+              "catalyst": "B-21 production ramp + Sentinel development", "asymmetry": "Nuclear deterrence is non-negotiable sovereign spend"},
+    "GD":    {"sector": "Defense", "bottleneck": "Submarines + armored vehicles", "elite": "US Navy prime",
+              "thesis": "General Dynamics — Virginia-class subs, Columbia-class SSBNs, Abrams tanks, Gulfstream jets.",
+              "catalyst": "AUKUS submarine deal + Army modernisation", "asymmetry": "Submarine production is a 20-year backlog"},
+    # ── CYBERSECURITY ──
+    "CRWD":  {"sector": "Cybersecurity", "bottleneck": "Endpoint + cloud security platform", "elite": "US government mandates",
+              "thesis": "CrowdStrike — Falcon platform protects endpoints, cloud, identity. Government + enterprise adoption accelerating.",
+              "catalyst": "Government cyber mandates + platform consolidation", "asymmetry": "Every breach drives more security spend — permanent tailwind"},
+    "PANW":  {"sector": "Cybersecurity", "bottleneck": "Network security + SASE", "elite": "Enterprise standard",
+              "thesis": "Palo Alto Networks — platformisation strategy consolidating firewalls, SASE, SOC. Largest pure-play cyber company.",
+              "catalyst": "Platformisation ARR growth + AI-driven SOC", "asymmetry": "Cyber attacks escalate with AI — defense spend must follow"},
+    # ── HEALTHCARE / PHARMA / LONGEVITY ──
+    "LLY":   {"sector": "Pharma", "bottleneck": "GLP-1 obesity + diabetes", "elite": "Largest pharma by market cap",
+              "thesis": "Eli Lilly — Mounjaro + Zepbound are the biggest drug launches in history. Obesity is a $100B+ market.",
+              "catalyst": "Supply expansion + new indications (NASH, sleep apnea)", "asymmetry": "700M people globally have obesity — supply can't meet demand for years"},
+    "UNH":   {"sector": "Healthcare", "bottleneck": "US healthcare infrastructure", "elite": "Largest health insurer + Optum data",
+              "thesis": "UnitedHealth — insures 50M Americans + Optum health services + data analytics. Healthcare backbone.",
+              "catalyst": "Medicare Advantage growth + Optum AI integration", "asymmetry": "Aging population = structural demand — can't be disrupted easily"},
+    # ── INFRASTRUCTURE / GRID / ELECTRICAL ──
+    "ETN":   {"sector": "Electrical Infrastructure", "bottleneck": "Power management for AI + grid", "elite": "Institutional infrastructure play",
+              "thesis": "Eaton — electrical equipment for data centres, grid, EV charging. Power management is the bottleneck behind AI.",
+              "catalyst": "Data centre power demand + grid modernisation spend", "asymmetry": "Every new AI data centre needs Eaton equipment — invisible infrastructure"},
+    "PWR":   {"sector": "Grid Infrastructure", "bottleneck": "Electrical grid construction", "elite": "Infrastructure bill beneficiary",
+              "thesis": "Quanta Services — builds power grids, telecom networks, pipelines. Largest electrical contractor in US.",
+              "catalyst": "Grid hardening + renewable interconnection backlog", "asymmetry": "US grid needs $2T+ investment — Quanta is the builder"},
+    # ── ENERGY MAJORS ──
+    "XOM":   {"sector": "Energy", "bottleneck": "Global oil & gas supply", "elite": "Largest Western oil major",
+              "thesis": "ExxonMobil — Permian Basin dominance + Pioneer acquisition. Energy security = national security.",
+              "catalyst": "Permian production growth + Pioneer synergies", "asymmetry": "World still runs on oil — transition takes decades, not years"},
+    "CVX":   {"sector": "Energy", "bottleneck": "LNG + Permian production", "elite": "Institutional energy core",
+              "thesis": "Chevron — Permian Basin + global LNG portfolio + Hess acquisition for Guyana.",
+              "catalyst": "Hess/Guyana production ramp + LNG demand", "asymmetry": "European + Asian LNG demand is structural, not cyclical"},
+    # ── PRIVATE CAPITAL / ALTERNATIVE ASSET MANAGERS ──
+    "BX":    {"sector": "Alternative Assets", "bottleneck": "Private equity + real estate + credit", "elite": "Schwarzman — Davos/sovereign fund access",
+              "thesis": "Blackstone — $1T+ AUM. Private equity, real estate, credit, infrastructure. Gatekeeper of institutional capital.",
+              "catalyst": "Private credit expansion + infrastructure deals", "asymmetry": "Capital is flowing from public to private markets — Blackstone is the toll bridge"},
+    "KKR":   {"sector": "Alternative Assets", "bottleneck": "Private equity + infrastructure", "elite": "S&P 500 inclusion + institutional flow",
+              "thesis": "KKR — private equity, infrastructure, credit. S&P 500 entry drives passive fund buying.",
+              "catalyst": "Infrastructure fund deployment + Asia expansion", "asymmetry": "Alternative assets growing 2x faster than public markets"},
+    "APO":   {"sector": "Alternative Assets", "bottleneck": "Private credit + retirement", "elite": "Athene retirement platform",
+              "thesis": "Apollo — largest private credit platform + Athene retirement. Building permanent capital base.",
+              "catalyst": "Private credit replacing bank lending + Athene growth", "asymmetry": "Basel III pushes loans from banks to private credit — Apollo catches them"},
+    # ── FOOD / AGRICULTURE ──
+    "DE":    {"sector": "Agriculture", "bottleneck": "Precision agriculture equipment", "elite": "Institutional core + food security",
+              "thesis": "Deere & Company — autonomous tractors, precision planting, AI-powered farming. Feeds the world.",
+              "catalyst": "Autonomous farming adoption + replacement cycle", "asymmetry": "9B people need food — farming must get more efficient, not less"},
+    "ADM":   {"sector": "Agriculture", "bottleneck": "Global grain processing + logistics", "elite": "Food supply chain backbone",
+              "thesis": "Archer-Daniels-Midland — processes and transports grain globally. Critical food infrastructure.",
+              "catalyst": "Food security concerns + biofuel demand", "asymmetry": "Grain supply chains are strategic — you can't eat semiconductors"},
+    # ── SHIPPING / LOGISTICS ──
+    "ZIM":   {"sector": "Shipping", "bottleneck": "Container shipping", "elite": "Israeli state-linked",
+              "thesis": "ZIM — container shipping exposed to Red Sea disruption, global trade re-routing. Volatile but strategic.",
+              "catalyst": "Red Sea disruption premium + rate recovery", "asymmetry": "90% of world trade moves by sea — shipping is the real supply chain"},
+    "FDX":   {"sector": "Logistics", "bottleneck": "Global package logistics", "elite": "Institutional core",
+              "thesis": "FedEx — global logistics backbone. DRIVE restructuring cutting $4B costs. E-commerce structural growth.",
+              "catalyst": "DRIVE cost savings + network optimisation", "asymmetry": "Global trade needs logistics — FedEx is the infrastructure"},
+    # ── QUANTUM / NEXT-GEN COMPUTE ──
+    "IONQ":  {"sector": "Quantum Computing", "bottleneck": "Trapped-ion quantum hardware", "elite": "Amazon + government contracts",
+              "thesis": "IonQ — leading quantum computing company. Government + enterprise contracts. AWS Braket integration.",
+              "catalyst": "Quantum advantage demonstrations + government funding", "asymmetry": "Quantum breaks current encryption — governments must invest or be vulnerable"},
+    # ── FINANCIAL INFRASTRUCTURE ──
+    "GS":    {"sector": "Investment Banking", "bottleneck": "Capital markets infrastructure", "elite": "Davos/Basel/central bank access",
+              "thesis": "Goldman Sachs — investment banking, trading, asset management. Sees capital flows before anyone else.",
+              "catalyst": "IPO market recovery + trading revenue", "asymmetry": "Goldman is where the deals happen — structural information advantage"},
 }
 
 
 def compute_frontier_score(info, hist, meta):
-    """Elite Signal Score = Elite Capital 25% + Strategic Bottleneck 25% +
-    Civilization Need 20% + Public Attention Gap 15% + Public Market Access 15%"""
-    import math
+    """Frontier Opportunity = Pressure × Bottleneck × Hiddenness × Catalyst × Survivability.
 
-    # ── Elite Capital Movement (25%) ──
-    elite_s = 55
-    inst = safe(info, "heldPercentInstitutions", default=None)
-    if inst is not None:
-        if inst > 0.85:
-            elite_s += 15
-        elif inst > 0.70:
-            elite_s += 10
-        elif inst < 0.30:
-            elite_s -= 10
-    insider = safe(info, "heldPercentInsiders", default=None)
-    if insider is not None:
-        if insider > 0.10:
-            elite_s += 10
-        elif insider > 0.05:
-            elite_s += 5
-    n_inst = safe(info, "institutionCount", "floatShares", default=0)
-    if isinstance(n_inst, (int, float)) and n_inst > 1000:
-        elite_s += 5
-    elite_s = min(100, max(0, elite_s))
-
-    # ── Strategic Bottleneck (25%) ──
-    bottleneck_s = 60
+    One master equation. No subcategories. No philosophy layers.
+    Each factor scores 0-100, composite is the weighted geometric mean.
+    """
     mc = safe(info, "marketCap", default=0) or 0
+
+    # ── 1. PRESSURE (what force is growing?) ──
+    pressure_map = {
+        "AI Compute": 95, "Cloud / AI": 90, "AI / Social": 80,
+        "Semiconductors": 90, "Memory": 85, "Networking": 80,
+        "Nuclear": 90, "Uranium": 85, "Energy": 80, "Solar": 75,
+        "Data Centre": 90, "Electrical Infrastructure": 85, "Grid Infrastructure": 85,
+        "Defense": 85, "Defense Tech": 85, "Defense IT": 80, "Cybersecurity": 85,
+        "Space": 80, "Robotics": 80, "Quantum Computing": 80,
+        "Critical Minerals": 85, "Lithium": 80,
+        "Biotech": 75, "Diagnostics": 75, "Gene Editing": 80, "Pharma": 75, "Healthcare": 70,
+        "Water": 80, "Agriculture": 75,
+        "Manufacturing": 70, "Industrial": 70,
+        "Alternative Assets": 65, "Investment Banking": 60,
+        "Shipping": 65, "Logistics": 65, "Fintech": 60,
+    }
+    pressure_s = pressure_map.get(meta["sector"], 50)
+    rev_growth = safe(info, "revenueGrowth", default=0) or 0
+    if rev_growth > 0.40:
+        pressure_s = min(100, pressure_s + 10)
+    elif rev_growth > 0.20:
+        pressure_s = min(100, pressure_s + 5)
+    elif rev_growth < -0.05:
+        pressure_s = max(0, pressure_s - 15)
+
+    # ── 2. BOTTLENECK (what breaks first? high margins + scarcity = bottleneck) ──
+    bottleneck_s = 40
+    gm = safe(info, "grossMargins", default=0) or 0
+    if gm > 0.65:
+        bottleneck_s += 25
+    elif gm > 0.45:
+        bottleneck_s += 15
+    elif gm > 0.30:
+        bottleneck_s += 5
     if mc < 10e9:
         bottleneck_s += 15
-    elif mc < 50e9:
+    elif mc < 30e9:
         bottleneck_s += 8
-    gm = safe(info, "grossMargins", default=0) or 0
-    if gm > 0.60:
-        bottleneck_s += 12
-    elif gm > 0.40:
-        bottleneck_s += 6
-    rev_growth = safe(info, "revenueGrowth", default=0) or 0
     if rev_growth > 0.25:
-        bottleneck_s += 8
+        bottleneck_s += 10
     elif rev_growth > 0.10:
-        bottleneck_s += 4
+        bottleneck_s += 5
+    om = safe(info, "operatingMargins", default=0) or 0
+    if om > 0.25:
+        bottleneck_s += 10
     bottleneck_s = min(100, max(0, bottleneck_s))
 
-    # ── Civilization Need (20%) ──
-    civ_sectors = {"Energy": 80, "Nuclear": 90, "Uranium": 85, "Solar": 75, "Water": 85,
-                   "Defense": 75, "Defense Tech": 80, "Defense IT": 75, "Space": 85,
-                   "Critical Minerals": 90, "Lithium": 85, "Robotics": 80,
-                   "Manufacturing": 70, "Industrial": 70, "Biotech": 75, "Diagnostics": 80,
-                   "Gene Editing": 85, "Data Centre": 80, "Networking": 70, "Semiconductors": 75,
-                   "Memory": 80, "Fintech": 65}
-    civ_s = civ_sectors.get(meta["sector"], 60)
-
-    # ── Public Attention Gap (15%) — LOWER attention = HIGHER score ──
-    attention_s = 60
+    # ── 3. HIDDENNESS (ignore crowded stories — less coverage = more opportunity) ──
+    hidden_s = 50
     n_analysts = safe(info, "numberOfAnalystOpinions", default=0) or 0
-    if n_analysts < 10:
-        attention_s += 25
-    elif n_analysts < 20:
-        attention_s += 15
-    elif n_analysts < 30:
-        attention_s += 5
-    elif n_analysts > 40:
-        attention_s -= 15
+    if n_analysts <= 5:
+        hidden_s = 90
+    elif n_analysts <= 12:
+        hidden_s = 75
+    elif n_analysts <= 20:
+        hidden_s = 60
+    elif n_analysts <= 35:
+        hidden_s = 40
+    else:
+        hidden_s = 20
     avg_vol = 0
     if not hist.empty and len(hist) >= 20:
         avg_vol = hist["Volume"].iloc[-20:].mean()
-    if avg_vol < 5e6:
-        attention_s += 10
-    elif avg_vol > 30e6:
-        attention_s -= 10
-    attention_s = min(100, max(0, attention_s))
+    if avg_vol < 2e6:
+        hidden_s = min(100, hidden_s + 10)
+    elif avg_vol > 50e6:
+        hidden_s = max(0, hidden_s - 15)
+    elif avg_vol > 20e6:
+        hidden_s = max(0, hidden_s - 8)
 
-    # ── Public Market Access (15%) ──
-    access_s = 50
-    if mc > 2e9:
-        access_s += 20
-    elif mc > 500e6:
-        access_s += 10
-    bid_ask = safe(info, "bid", default=0) or 0
-    ask = safe(info, "ask", default=0) or 0
-    if bid_ask > 0 and ask > 0:
-        spread_pct = (ask - bid_ask) / ask * 100
-        if spread_pct < 0.1:
-            access_s += 15
-        elif spread_pct < 0.5:
-            access_s += 8
-    if avg_vol > 1e6:
-        access_s += 10
-    elif avg_vol > 500e3:
-        access_s += 5
-    access_s = min(100, max(0, access_s))
+    # ── 4. CATALYST (must exist within 15-120 days — revenue acceleration as proxy) ──
+    catalyst_s = 40
+    if rev_growth > 0.30:
+        catalyst_s += 25
+    elif rev_growth > 0.15:
+        catalyst_s += 15
+    elif rev_growth > 0.05:
+        catalyst_s += 8
+    eg = safe(info, "earningsGrowth", default=0) or 0
+    if eg > 0.30:
+        catalyst_s += 15
+    elif eg > 0.10:
+        catalyst_s += 8
+    rec = safe(info, "recommendationMean", default=3) or 3
+    if rec <= 1.8:
+        catalyst_s += 10
+    elif rec <= 2.2:
+        catalyst_s += 5
+    target_price = safe(info, "targetMeanPrice", default=0) or 0
+    current_price = safe(info, "currentPrice", "regularMarketPrice", default=0) or 0
+    if target_price > 0 and current_price > 0:
+        upside = (target_price - current_price) / current_price
+        if upside > 0.30:
+            catalyst_s += 10
+        elif upside > 0.15:
+            catalyst_s += 5
+    catalyst_s = min(100, max(0, catalyst_s))
 
-    # ── Survivability ──
+    # ── 5. SURVIVABILITY (can it survive if thesis is delayed?) ──
     total_cash = safe(info, "totalCash", default=0) or 0
     total_debt = safe(info, "totalDebt", default=0) or 0
-    survivable = mc > 2e9 or total_cash > total_debt * 0.5 or total_debt == 0
-    surv_label = "✅ STRONG" if (mc > 10e9 and (total_cash > total_debt * 0.5 or total_debt == 0)) else (
-        "✅ OK" if survivable else "⚠️ FRAGILE")
+    fcf = safe(info, "freeCashflow", default=0) or 0
+    surv_s = 40
+    if mc > 10e9 and (total_cash > total_debt * 0.5 or total_debt == 0):
+        surv_s = 90
+        surv_label = "✅ STRONG"
+    elif mc > 2e9 or total_cash > total_debt * 0.5 or total_debt == 0:
+        surv_s = 65
+        surv_label = "✅ OK"
+    else:
+        surv_s = 30
+        surv_label = "⚠️ FRAGILE"
+    if fcf > 0:
+        surv_s = min(100, surv_s + 10)
+    elif fcf < -500e6:
+        surv_s = max(0, surv_s - 10)
 
-    # ── Composite ──
-    frontier_score = (elite_s * 0.25 + bottleneck_s * 0.25 +
-                      civ_s * 0.20 + attention_s * 0.15 + access_s * 0.15)
+    # ── COMPOSITE: weighted geometric mean ──
+    # Pressure 25%, Bottleneck 25%, Hiddenness 20%, Catalyst 15%, Survivability 15%
+    import math
+    floors = [max(s, 1) for s in [pressure_s, bottleneck_s, hidden_s, catalyst_s, surv_s]]
+    frontier_score = math.exp(
+        0.25 * math.log(floors[0]) +
+        0.25 * math.log(floors[1]) +
+        0.20 * math.log(floors[2]) +
+        0.15 * math.log(floors[3]) +
+        0.15 * math.log(floors[4])
+    )
+    frontier_score = min(100, max(0, round(frontier_score)))
 
     return {
-        "frontier": round(frontier_score),
-        "elite": elite_s, "bottleneck": bottleneck_s,
-        "civilization": civ_s, "attention_gap": attention_s,
-        "access": access_s, "survivability": surv_label,
+        "frontier": frontier_score,
+        "pressure": pressure_s, "bottleneck": bottleneck_s,
+        "hiddenness": hidden_s, "catalyst": catalyst_s,
+        "survivability_score": surv_s, "survivability": surv_label,
         "components": {
-            "Elite Capital": elite_s, "Strategic Bottleneck": bottleneck_s,
-            "Civilization Need": civ_s, "Attention Gap": attention_s,
-            "Market Access": access_s
+            "Pressure": pressure_s, "Bottleneck": bottleneck_s,
+            "Hiddenness": hidden_s, "Catalyst": catalyst_s,
+            "Survivability": surv_s,
         }
     }
 
@@ -6619,6 +6760,8 @@ def compute_frontier_score(info, hist, meta):
 @st.cache_data(ttl=600, show_spinner=False)
 def fetch_frontier_data():
     from concurrent.futures import ThreadPoolExecutor, as_completed
+    import logging
+    _log = logging.getLogger("cfis.frontier")
 
     def _fetch_one(t):
         tk = yf.Ticker(t)
@@ -6627,14 +6770,19 @@ def fetch_frontier_data():
         return t, info, hist
 
     prefetched = {}
-    with ThreadPoolExecutor(max_workers=10) as pool:
+    failed = []
+    with ThreadPoolExecutor(max_workers=8) as pool:
         futures = {pool.submit(_fetch_one, t): t for t in FRONTIER_UNIVERSE}
         for f in as_completed(futures):
+            t = futures[f]
             try:
-                t, info, hist = f.result()
+                t, info, hist = f.result(timeout=30)
                 prefetched[t] = (info, hist)
-            except Exception:
-                pass
+            except Exception as e:
+                failed.append(t)
+                _log.warning("Frontier fetch failed for %s: %s", t, e)
+    if failed:
+        _log.info("Frontier: %d/%d tickers failed: %s", len(failed), len(FRONTIER_UNIVERSE), failed[:10])
 
     rows = []
     for t, meta in FRONTIER_UNIVERSE.items():
@@ -6649,7 +6797,7 @@ def fetch_frontier_data():
                 continue
 
             fs = compute_frontier_score(info, hist, meta)
-            proj = cfis_projection(info, hist, fs["frontier"], fs["elite"], fs["attention_gap"])
+            proj = cfis_projection(info, hist, fs["frontier"], fs["pressure"], fs["hiddenness"])
 
             mc = safe(info, "marketCap", default=0) or 0
             mc_str = f"${mc/1e9:.1f}B" if mc >= 1e9 else (f"${mc/1e6:.0f}M" if mc >= 1e6 else "N/A")
@@ -6661,15 +6809,16 @@ def fetch_frontier_data():
                 "elite_backer": meta["elite"], "thesis": meta["thesis"],
                 "catalyst": meta["catalyst"], "asymmetry": meta["asymmetry"],
                 "frontier_score": fs["frontier"],
-                "elite_score": fs["elite"], "bottleneck_score": fs["bottleneck"],
-                "civ_score": fs["civilization"], "attention_gap": fs["attention_gap"],
-                "access_score": fs["access"], "survivability": fs["survivability"],
+                "pressure_score": fs["pressure"], "bottleneck_score": fs["bottleneck"],
+                "hiddenness_score": fs["hiddenness"], "catalyst_score": fs["catalyst"],
+                "survivability_score": fs["survivability_score"],
+                "survivability": fs["survivability"],
                 "proj_15d": proj["15d"], "proj_30d": proj["30d"], "proj_90d": proj["90d"],
                 "proj_direction": proj["direction"],
                 "components": fs["components"],
             })
-        except Exception:
-            pass
+        except Exception as e:
+            _log.warning("Frontier score failed for %s: %s", t, e)
 
     rows.sort(key=lambda x: x["frontier_score"], reverse=True)
     return rows
@@ -9899,24 +10048,26 @@ elif page == "8️⃣ CFIS Frontier by Louis Teo":
 
     st.markdown("""
     <div style="background:#1a1500;border:1px solid #FF9800;border-radius:12px;padding:14px 18px;margin-bottom:16px">
-        <div style="font-size:10px;color:#FFC107;letter-spacing:2px;font-weight:700;margin-bottom:6px">PHILOSOPHY</div>
+        <div style="font-size:10px;color:#FFC107;letter-spacing:2px;font-weight:700;margin-bottom:6px">GOLDEN RULES</div>
         <div style="font-size:12px;color:#c9d1d9;line-height:1.8">
-            Don't chase what Wall Street already owns. <strong style="color:#FF9800">Find the bottleneck behind the next civilization need</strong>
-            — then check if elite builders (Musk, Thiel, Altman, a16z, Jensen) are already there.
-            The goal: discover the next Micron/Marvell-style asymmetry <strong>before consensus forms</strong>.
+            <strong style="color:#FF9800">No Bottleneck = No Edge.</strong>
+            No Catalyst = No Trade.
+            Popular Ideas Are Late.
+            Follow Problems, Not Stories.
+            <strong style="color:#FF9800">Study What Elite Engineers Fear.</strong>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
     st.markdown("""
     <div style="background:#111827;border:1px solid #2e3550;border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:11px;color:#8a9bb5;line-height:1.7">
-        <strong style="color:#FF9800">📊 Elite Signal Score =</strong>
-        Elite Capital Movement <strong>25%</strong> +
-        Strategic Bottleneck <strong>25%</strong> +
-        Civilization Need <strong>20%</strong> +
-        Public Attention Gap <strong>15%</strong> +
-        Public Market Access <strong>15%</strong>.
-        <strong style="color:#c9d1d9">CFIS projections (15D/30D/90D)</strong> use real momentum + conviction through CFIS formula.
+        <strong style="color:#FF9800">📊 Frontier Score =</strong>
+        Pressure <strong>25%</strong> ×
+        Bottleneck <strong>25%</strong> ×
+        Hiddenness <strong>20%</strong> ×
+        Catalyst <strong>15%</strong> ×
+        Survivability <strong>15%</strong>
+        <span style="color:#c9d1d9;margin-left:6px">· Future Pressure → Bottleneck → Hidden Company → Catalyst → Capital Rotation → Price Re-rating</span>
     </div>
     """, unsafe_allow_html=True)
 
@@ -9928,7 +10079,7 @@ elif page == "8️⃣ CFIS Frontier by Louis Teo":
         st.session_state["frontier_triggered"] = True
 
     if not st.session_state.get("frontier_triggered"):
-        st.info("Click to scan ~30 frontier stocks across energy, robotics, space, longevity, rare earths, fintech, water, defense, and AI infrastructure.")
+        st.info("Click to scan frontier stocks across AI, semiconductors, defense, energy, nuclear, grid, cybersecurity, space, biotech, agriculture, shipping, infrastructure, and more.")
     else:
         with st.spinner("Scanning frontier universe — fetching elite capital signals..."):
             try:
@@ -9987,7 +10138,13 @@ elif page == "8️⃣ CFIS Frontier by Louis Teo":
                                 "Space": "🚀", "Critical Minerals": "⛏️", "Lithium": "🔋",
                                 "Biotech": "🧬", "Diagnostics": "🔬", "Gene Editing": "✂️",
                                 "Fintech": "💳", "Water": "💧", "Manufacturing": "🏭", "Industrial": "🏭",
-                                "Data Centre": "🖥️", "Networking": "🌐", "Semiconductors": "💎", "Memory": "💾"}
+                                "Data Centre": "🖥️", "Networking": "🌐", "Semiconductors": "💎", "Memory": "💾",
+                                "AI Compute": "🧠", "Cloud / AI": "☁️", "AI / Social": "🤖",
+                                "Pharma": "💊", "Healthcare": "🏥", "Cybersecurity": "🔒",
+                                "Electrical Infrastructure": "⚡", "Grid Infrastructure": "🔌",
+                                "Alternative Assets": "🏦", "Investment Banking": "🏛️",
+                                "Agriculture": "🌾", "Shipping": "🚢", "Logistics": "📦",
+                                "Quantum Computing": "⚛️"}
                 s_icon = sector_icons.get(r["sector"], "📊")
 
                 st.markdown(f"""
@@ -10045,11 +10202,11 @@ elif page == "8️⃣ CFIS Frontier by Louis Teo":
                     breakdown_rows.append({
                         "Ticker": r["ticker"],
                         "Frontier": r["frontier_score"],
-                        "Elite Capital": r["elite_score"],
+                        "Pressure": r["pressure_score"],
                         "Bottleneck": r["bottleneck_score"],
-                        "Civ Need": r["civ_score"],
-                        "Attention Gap": r["attention_gap"],
-                        "Market Access": r["access_score"],
+                        "Hiddenness": r["hiddenness_score"],
+                        "Catalyst": r["catalyst_score"],
+                        "Survive": r["survivability_score"],
                         "CFIS 30D": f"{r['proj_30d']:+.1f}%",
                         "Sector": r["sector"],
                     })
@@ -10059,13 +10216,13 @@ elif page == "8️⃣ CFIS Frontier by Louis Teo":
             <div style="background:#0d1117;border:1px solid #21262d;border-radius:12px;padding:16px;margin-top:20px">
                 <div style="font-size:10px;color:#FFC107;letter-spacing:2px;font-weight:700;margin-bottom:8px">METHODOLOGY</div>
                 <div style="font-size:11px;color:#c9d1d9;line-height:2.0">
-                    <strong style="color:#FF9800">Elite Capital (25%)</strong> — Institutional ownership, insider holdings, known elite backer connections<br>
-                    <strong style="color:#FF7043">Strategic Bottleneck (25%)</strong> — Market cap (smaller = less consensus), gross margins, revenue growth<br>
-                    <strong style="color:#AB47BC">Civilization Need (20%)</strong> — Sector criticality: energy, water, defense, rare earths, longevity, space<br>
-                    <strong style="color:#4FC3F7">Attention Gap (15%)</strong> — Fewer analysts + lower volume = less public consensus = more opportunity<br>
-                    <strong style="color:#66BB6A">Market Access (15%)</strong> — Liquidity, market cap, spread — can you actually trade it?<br><br>
-                    <strong style="color:#c9d1d9">CFIS Projections</strong> — Forward 15D/30D/90D estimates from real momentum + CFIS conviction model<br>
-                    <strong style="color:#f44336">⚠️ These are frontier/speculative opportunities</strong> — higher risk, higher asymmetry. Position size accordingly.
+                    <strong style="color:#FF9800">1. Pressure (25%)</strong> — What force is growing? AI, electricity, defense, robotics, aging, water. No pressure = no opportunity.<br>
+                    <strong style="color:#FF7043">2. Bottleneck (25%)</strong> — What breaks first? High margins + scarcity + revenue growth = chokepoint. The bottleneck is king.<br>
+                    <strong style="color:#AB47BC">3. Hiddenness (20%)</strong> — Ignore crowded stories. Fewer analysts + lower volume = higher score. Everyone talking = low score.<br>
+                    <strong style="color:#4FC3F7">4. Catalyst (15%)</strong> — Must exist within 15-120 days. Earnings acceleration, analyst conviction, price targets. No catalyst = no trade.<br>
+                    <strong style="color:#66BB6A">5. Survivability (15%)</strong> — Can it survive if thesis is delayed? Cash > debt, positive FCF, strong balance sheet.<br><br>
+                    <strong style="color:#c9d1d9">Flow:</strong> Future Pressure → Bottleneck → Elite Concern → Hidden Company → Catalyst → Capital Rotation → Price Re-rating<br>
+                    <strong style="color:#f44336">⚠️ Frontier opportunities</strong> — higher risk, higher asymmetry. Position size accordingly.
                 </div>
             </div>
             """, unsafe_allow_html=True)

@@ -11,6 +11,8 @@
 - 4 pages switched to `scan_or_load()` (stored signals when available).
 - Market Health search expanded with FMP/Supabase universe.
 - `services/` and `database/` directories created.
+- Institutional Macro & Strategic Flow layer in `services/strategic_flow.py`.
+- Migration `003_strategic_flow_columns.sql` for Supabase persistence.
 
 ## Immediate
 
