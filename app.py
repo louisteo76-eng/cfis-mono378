@@ -5962,6 +5962,7 @@ def get_opportunity_universe():
     return get_scanner_universe(LIVE_SCAN_LIMIT)
 
 
+@st.cache_data(ttl=600, show_spinner=False)
 def _prefetch_yfinance(tickers):
     """Parallel prefetch yfinance data — returns dict of ticker -> (info, hist)."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -5974,7 +5975,7 @@ def _prefetch_yfinance(tickers):
             return t, info, hist
         except Exception:
             return t, None, None
-    with ThreadPoolExecutor(max_workers=12) as pool:
+    with ThreadPoolExecutor(max_workers=16) as pool:
         futures = [pool.submit(_fetch, t) for t in tickers]
         for f in as_completed(futures):
             t, info, hist = f.result()
@@ -6191,7 +6192,7 @@ def _build_row(t, info, hist, enriched=None):
     }
 
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=600, show_spinner=False)
 def scan_opportunities(universe_tuple):
     prefetched = _prefetch_yfinance(universe_tuple)
 
