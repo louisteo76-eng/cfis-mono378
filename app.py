@@ -6425,6 +6425,9 @@ FRONTIER_UNIVERSE = {
     "CCJ":   {"sector": "Uranium", "bottleneck": "Uranium fuel supply", "elite": "Institutional accumulation",
               "thesis": "Cameco controls 15% of global uranium. Nuclear restarts need fuel. Supply deficit widening.",
               "catalyst": "Reactor restarts globally + supply contracts", "asymmetry": "Uranium supply takes 10+ years to bring online"},
+    "TLN":   {"sector": "Power", "bottleneck": "Nuclear + gas baseload for AI data centres", "elite": "Institutional accumulation",
+              "thesis": "Talen Energy — owns Susquehanna nuclear plant (largest in US). Amazon PPAs for data centre power.",
+              "catalyst": "Data centre power contracts + nuclear restart economics", "asymmetry": "AI needs 24/7 baseload — nuclear owners become strategic assets"},
     "FSLR":  {"sector": "Solar", "bottleneck": "US solar manufacturing", "elite": "IRA beneficiary",
               "thesis": "Only US-scale solar panel maker. Tariffs + IRA subsidies = protected moat. Thin-film tech advantage.",
               "catalyst": "IRA manufacturing credits + tariff escalation", "asymmetry": "US energy independence requires domestic solar"},
@@ -6508,6 +6511,9 @@ FRONTIER_UNIVERSE = {
     "ACLS":  {"sector": "Semiconductors", "bottleneck": "Ion implant equipment", "elite": "Chip equipment chain",
               "thesis": "Axcelis Technologies — ion implantation for SiC power chips. EV + AI power management.",
               "catalyst": "SiC adoption in EVs + AI power delivery", "asymmetry": "Niche monopoly in a critical chip-making step"},
+    "LSCC":  {"sector": "Semiconductors", "bottleneck": "Low-power FPGA for edge AI + defense", "elite": "DoD supply chain",
+              "thesis": "Lattice Semiconductor — FPGAs for edge compute, defense, automotive, 5G. Only pure-play low-power FPGA maker.",
+              "catalyst": "Edge AI adoption + defense electronics modernisation", "asymmetry": "Edge devices can't use big GPUs — Lattice owns the low-power niche"},
     # ── AI / CLOUD HYPERSCALE ──
     "NVDA":  {"sector": "AI Compute", "bottleneck": "GPU monopoly for AI training", "elite": "Every sovereign fund + hyperscaler",
               "thesis": "NVIDIA — 90%+ share of AI training GPUs. CUDA ecosystem lock-in. Data centre revenue >$100B run-rate.",
@@ -7513,7 +7519,8 @@ if page == "1️⃣ Market Health":
         "qualcomm":"QCOM","texas instruments":"TXN","micron":"MU",
         "marvell":"MRVL","supermicro":"SMCI","asml":"ASML","tsmc":"TSM",
         "lam research":"LRCX","applied materials":"AMAT","on semi":"ON",
-        "skyworks":"SWKS","mobileye":"MBLY",
+        "skyworks":"SWKS","mobileye":"MBLY","lattice":"LSCC","lattice semi":"LSCC",
+        "lattice semiconductor":"LSCC",
         # AI / Software
         "palantir":"PLTR","salesforce":"CRM","adobe":"ADBE","oracle":"ORCL",
         "servicenow":"NOW","snowflake":"SNOW","shopify":"SHOP",
@@ -7546,7 +7553,8 @@ if page == "1️⃣ Market Health":
         # Industrials / Power
         "eaton":"ETN","ge vernova":"GEV","vernova":"GEV",
         # Energy
-        "nextera":"NEE","constellation energy":"CEG","cameco":"CCJ",
+        "nextera":"NEE","constellation energy":"CEG","cameco":"CCJ","talen":"TLN",
+        "talen energy":"TLN",
         "first solar":"FSLR","exxon":"XOM","exxonmobil":"XOM",
         "chevron":"CVX","conocophillips":"COP","enphase":"ENPH",
         "vistra":"VST","uranium energy":"UEC","oklo":"OKLO","nuscale":"SMR",
