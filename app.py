@@ -194,10 +194,25 @@ if tape_items:
     [data-testid="stHeader"] > div {{
         background: transparent !important;
     }}
-    /* Move sidebar toggle above ticker tape on mobile */
+    /* Keep sidebar toggle obvious when sidebar starts collapsed */
     [data-testid="stSidebarCollapsedControl"] {{
         z-index: 1000000 !important;
-        top: 36px !important;
+        position: fixed !important;
+        top: 40px !important;
+        left: 12px !important;
+        background: #111827 !important;
+        border: 1px solid #3b82f6 !important;
+        border-radius: 8px !important;
+        box-shadow: 0 6px 18px rgba(0,0,0,0.35) !important;
+        width: 38px !important;
+        height: 38px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }}
+    [data-testid="stSidebarCollapsedControl"] * {{
+        color: #ffffff !important;
+        fill: #ffffff !important;
     }}
     /* Push content below ticker tape */
     [data-testid="stAppViewContainer"] > div:first-child {{ padding-top: 36px !important; }}
@@ -350,6 +365,46 @@ hr { border-color: #1a2035 !important; opacity: 0.6 !important; }
 .outlook-card {
     background: #111827; border-radius: 8px; padding: 18px;
     text-align: center; border: 1px solid #1a2035;
+}
+.financial-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    margin: 8px 0 18px 0;
+}
+.financial-card {
+    min-height: 92px;
+    background: #111827;
+    border: 1px solid #1a2035;
+    border-radius: 8px;
+    padding: 14px 16px;
+    overflow-wrap: anywhere;
+}
+.financial-label {
+    color: #7a8ba8;
+    font-size: 10px;
+    line-height: 1.2;
+    letter-spacing: 0.7px;
+    text-transform: uppercase;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+.financial-value {
+    color: #ffffff;
+    font-size: 26px;
+    line-height: 1.12;
+    font-weight: 900;
+    letter-spacing: 0;
+    white-space: normal;
+}
+@media (max-width: 900px) {
+    .financial-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .financial-value { font-size: 23px; }
+}
+@media (max-width: 520px) {
+    .financial-grid { grid-template-columns: 1fr; }
+    .financial-card { min-height: 76px; padding: 12px 14px; }
+    .financial-value { font-size: 22px; }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -980,6 +1035,103 @@ def render_social_intelligence(social, ticker):
                 f'font-size:13px;color:#e8ecf4;line-height:1.7">{interp}</div>', unsafe_allow_html=True)
 
 
+def render_source_confidence(info, hist, inst, maj, opt_dates, social, enriched):
+    """Show users which data sources are active before score interpretation."""
+    hist_ok = hist is not None and not hist.empty and len(hist) >= 120
+    hist_days = len(hist) if hist is not None and not hist.empty else 0
+    info_fields = [
+        safe(info, "currentPrice", "regularMarketPrice"),
+        safe(info, "marketCap"),
+        safe(info, "totalRevenue"),
+        safe(info, "totalCash"),
+        safe(info, "totalDebt"),
+    ]
+    fundamentals = sum(1 for v in info_fields if v is not None)
+    inst_ok = (inst is not None and not inst.empty) or (maj is not None and not maj.empty)
+    options_ok = bool(opt_dates)
+    social_ok = bool(social.get("has_data"))
+    enriched_sources = enriched.get("data_sources", []) if isinstance(enriched, dict) else []
+
+    coverage = clamp(
+        (30 if hist_ok else 12) +
+        min(fundamentals * 8, 32) +
+        (12 if inst_ok else 0) +
+        (10 if options_ok else 0) +
+        min(len(set(enriched_sources)) * 4, 8)
+    )
+    signal_confidence = clamp(
+        (35 if hist_ok else 15) +
+        min(fundamentals * 7, 28) +
+        (12 if inst_ok else 0) +
+        (10 if options_ok else 0) +
+        (5 if social_ok else 0) +
+        min(len(set(enriched_sources)) * 3, 10)
+    )
+    freshness = clamp(
+        (55 if hist_days >= 120 else 25) +
+        (15 if safe(info, "currentPrice", "regularMarketPrice") is not None else 0) +
+        (10 if options_ok else 0) +
+        (10 if social_ok else 0) +
+        min(len(set(enriched_sources)) * 2, 10)
+    )
+
+    def confidence_badge(label, value):
+        level = "High" if value >= 75 else ("Medium" if value >= 50 else "Low")
+        color = "#4CAF50" if value >= 75 else ("#FFC107" if value >= 50 else "#f44336")
+        return (
+            f'<span style="display:inline-flex;align-items:center;gap:6px;background:#111827;'
+            f'border:1px solid #1e2a40;border-radius:8px;padding:7px 10px;margin:3px;'
+            f'font-size:11px;color:#dce4f0">'
+            f'<span style="color:#8a9bb5">{label}</span> '
+            f'<b style="color:{color}">{level} ({value}/100)</b></span>'
+        )
+
+    source_items = [
+        ("Yahoo Price + Fundamentals", "High" if hist_ok and fundamentals >= 4 else "Medium"),
+        ("Options Chain", "Active" if options_ok else "Unavailable"),
+        ("Institutional Holders", "Active" if inst_ok else "Unavailable"),
+        ("Reddit Social Scan", "Active" if social_ok else "No signal found"),
+    ]
+    for src in sorted(set(enriched_sources)):
+        source_items.append((src.upper(), "Active"))
+
+    pills = ""
+    for name, status in source_items:
+        status_color = "#4CAF50" if status in ("High", "Active") else ("#FFC107" if status in ("Medium", "No signal found") else "#78909C")
+        pills += (
+            f'<span style="display:inline-flex;align-items:center;gap:6px;background:#111827;'
+            f'border:1px solid #1e2a40;border-radius:999px;padding:6px 10px;margin:3px;'
+            f'font-size:11px;color:#dce4f0">'
+            f'<b style="color:{status_color}">{status}</b> {name}</span>'
+        )
+
+    st.markdown(f"""
+    <div style="background:#0d1320;border:1px solid #24304a;border-radius:10px;padding:14px 16px;margin:8px 0 18px 0">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:8px">
+            <div style="font-size:12px;color:#8a9bb5;letter-spacing:2px;font-weight:700">DATA SOURCES & CONFIDENCE</div>
+            <div>{confidence_badge("Coverage", coverage)}{confidence_badge("Signal", signal_confidence)}{confidence_badge("Freshness", freshness)}</div>
+        </div>
+        <div>{pills}</div>
+        <div style="font-size:11px;color:#6a7a9a;margin-top:8px;line-height:1.5">
+            Coverage means data availability. Signal confidence means how much evidence supports the model output. Freshness reflects recent market/social/options inputs. Proxy signals remain directional research, not confirmed evidence.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+def render_financial_metric_grid(metrics):
+    """Render compact finance cards without Streamlit metric truncation."""
+    cards = ""
+    for label, value in metrics:
+        cards += (
+            '<div class="financial-card">'
+            f'<div class="financial-label">{label}</div>'
+            f'<div class="financial-value">{value}</div>'
+            '</div>'
+        )
+    st.markdown(f'<div class="financial-grid">{cards}</div>', unsafe_allow_html=True)
+
+
 # ─────────────────────────────────────────────────────────────
 # DATA FETCH
 # ─────────────────────────────────────────────────────────────
@@ -988,6 +1140,34 @@ def fetch(ticker):
     t = yf.Ticker(ticker)
     info = t.info
     hist = t.history(period="1y")
+    try:
+        balance_sheet = t.balance_sheet
+        if balance_sheet is None or balance_sheet.empty:
+            balance_sheet = t.quarterly_balance_sheet
+        if balance_sheet is not None and not balance_sheet.empty:
+            def latest_balance_value(*labels):
+                for label in labels:
+                    if label in balance_sheet.index:
+                        vals = balance_sheet.loc[label].dropna()
+                        if not vals.empty:
+                            return float(vals.iloc[0])
+                return None
+
+            assets = latest_balance_value("Total Assets")
+            liabilities = latest_balance_value(
+                "Total Liabilities Net Minority Interest",
+                "Total Liab",
+                "Total Liabilities",
+            )
+            if assets is not None and info.get("totalAssets") is None:
+                info["totalAssets"] = assets
+            if liabilities is not None:
+                if info.get("totalLiab") is None:
+                    info["totalLiab"] = liabilities
+                if info.get("totalLiabilitiesNetMinorityInterest") is None:
+                    info["totalLiabilitiesNetMinorityInterest"] = liabilities
+    except Exception:
+        pass
     try:
         inst = t.institutional_holders
     except:
@@ -4184,12 +4364,12 @@ def compute_hunter(info, hist, scores, cm, enriched=None):
         action = "STRONG GO"
         action_color = "#00E676"
         action_icon = "⚡"
-        action_desc = "ATTACK zone. Reality + Flow + Risk aligned. Capital flow confirmed. Act now."
+        action_desc = "ATTACK zone. Reality + Flow + Risk aligned. Entry window may be active."
     elif hs >= 75 and conv >= 65 and cap_s >= 65 and force_s >= 65 and timing_s >= 55 and louis_override:
         action = "GO"
         action_color = "#4CAF50"
         action_icon = "🔥"
-        action_desc = "COMMIT zone. 70%+ conviction reached. Flow confirmed. Enter position."
+        action_desc = "COMMIT zone. 70%+ conviction reached. Flow confirmed. Consider staged entry."
     elif hs >= 65:
         wait_reasons = []
         if timing_s < 55: wait_reasons.append("Timing not mature")
@@ -6415,205 +6595,205 @@ def render_opportunity_table(rows, count=12, show_thesis=True):
 FRONTIER_UNIVERSE = {
     # ── ENERGY / NUCLEAR / GRID ──
     "VST":   {"sector": "Energy", "bottleneck": "AI power demand", "elite": "Musk/Thiel ecosystem",
-              "thesis": "Vistra owns natural gas + nuclear peakers. AI data centres need 24/7 baseload. Grid bottleneck play.",
-              "catalyst": "Summer peak demand + new data centre PPAs", "asymmetry": "Power demand doubles by 2030, supply constrained"},
+              "thesis": "Hyperscaler data centre buildout creates non-discretionary baseload power demand — PPA contracts lock in revenue for 10-15 years. Vistra's nuclear + gas fleet provides 24/7 dispatchable power that renewables physically cannot (intermittency). ERCOT grid constraints in Texas give existing generators pricing power during peak demand. Institutional capital is being forced from pure renewables into baseload as AI power demand exposes grid physics.",
+              "catalyst": "Summer peak demand + new data centre PPAs", "asymmetry": "Grid physics + long-term PPAs = locked-in demand that grows with AI capex"},
     "OKLO":  {"sector": "Nuclear", "bottleneck": "Small modular reactors", "elite": "Sam Altman (Chairman)",
-              "thesis": "Altman-backed micro-reactor company. Aurora powerhouse for remote/data centre use. Pre-revenue but strategic.",
-              "catalyst": "NRC licensing progress + first customer contracts", "asymmetry": "If SMRs work, monopoly on compact nuclear"},
+              "thesis": "DOE policy + hyperscaler power demand force capital into micro-reactors. Oklo's Aurora design targets the gap between grid-scale nuclear (too slow to build) and renewables (intermittent). Sovereign energy security policy treats SMRs as critical infrastructure.",
+              "catalyst": "NRC licensing progress + first customer contracts", "asymmetry": "If SMRs work, monopoly on compact nuclear — 10-year licensing moat"},
     "SMR":   {"sector": "Nuclear", "bottleneck": "Advanced nuclear design", "elite": "Bill Gates (founder)",
-              "thesis": "NuScale Power — only NRC-approved small modular reactor design. First-mover in next-gen nuclear.",
-              "catalyst": "DOE funding + utility partnerships", "asymmetry": "Nuclear renaissance = decade-long tailwind"},
+              "thesis": "Only NRC-approved SMR design. US energy policy requires nuclear baseload expansion but large reactors take 15+ years. NuScale is the regulatory chokepoint — utilities cannot deploy SMRs without this design. DOE funding de-risks early capital.",
+              "catalyst": "DOE funding + utility partnerships", "asymmetry": "Regulatory monopoly — no other SMR design is NRC-approved"},
     "CCJ":   {"sector": "Uranium", "bottleneck": "Uranium fuel supply", "elite": "Institutional accumulation",
-              "thesis": "Cameco controls 15% of global uranium. Nuclear restarts need fuel. Supply deficit widening.",
-              "catalyst": "Reactor restarts globally + supply contracts", "asymmetry": "Uranium supply takes 10+ years to bring online"},
+              "thesis": "22 countries signed COP28 pledge to triple nuclear capacity by 2050 — this is a multilateral policy commitment creating structural uranium demand. Supply deficit is widening because new mines take 10+ years to permit and build. Kazakhstan (40% of supply) faces geopolitical risk. Cameco controls 15% of global production — in a supply-constrained commodity, the marginal producer sets the price.",
+              "catalyst": "Reactor restarts globally + supply contracts", "asymmetry": "COP28 nuclear pledge + 10-year mine development cycle = structural supply deficit for a decade"},
     "TLN":   {"sector": "Power", "bottleneck": "Nuclear + gas baseload for AI data centres", "elite": "Institutional accumulation",
-              "thesis": "Talen Energy — owns Susquehanna nuclear plant (largest in US). Amazon PPAs for data centre power.",
-              "catalyst": "Data centre power contracts + nuclear restart economics", "asymmetry": "AI needs 24/7 baseload — nuclear owners become strategic assets"},
+              "thesis": "Amazon's Susquehanna PPA signals hyperscaler policy: secure dedicated nuclear baseload. Talen owns the largest US nuclear plant — a scarce, non-replicable asset in a market where new nuclear takes 15+ years to build. NRC relicensing extends plant life to 80 years. Data centre operators are structurally forced to contract with existing nuclear owners because no alternatives exist at scale within the AI buildout timeline.",
+              "catalyst": "Data centre power contracts + nuclear restart economics", "asymmetry": "Scarce existing nuclear capacity + hyperscaler urgency = asset value repricing upward"},
     "FSLR":  {"sector": "Solar", "bottleneck": "US solar manufacturing", "elite": "IRA beneficiary",
-              "thesis": "Only US-scale solar panel maker. Tariffs + IRA subsidies = protected moat. Thin-film tech advantage.",
-              "catalyst": "IRA manufacturing credits + tariff escalation", "asymmetry": "US energy independence requires domestic solar"},
+              "thesis": "IRA Section 45X manufacturing credits + AD/CVD tariffs on Chinese panels create a policy-protected domestic manufacturing moat. First Solar is the only US-scale producer — tariff escalation structurally locks out competition. US energy independence policy mandates domestic solar supply chain. Utility-scale solar PPAs require US-manufactured panels for IRA tax credit qualification, creating forced demand.",
+              "catalyst": "IRA manufacturing credits + tariff escalation", "asymmetry": "Tariff protection + IRA tax credit linkage = policy-mandated demand for the sole domestic manufacturer"},
     # ── ROBOTICS / AUTOMATION ──
     "ISRG":  {"sector": "Robotics", "bottleneck": "Surgical robotics monopoly", "elite": "Institutional conviction",
-              "thesis": "Intuitive Surgical — 80%+ market share in robotic surgery. Razor/blade model with instruments.",
-              "catalyst": "Da Vinci 5 ramp + international expansion", "asymmetry": "Every hospital needs one, only 15% penetrated"},
+              "thesis": "Hospital capex budgets are structurally forced into robotic surgery — malpractice liability + surgeon shortage + Medicare reimbursement incentivise precision. ISRG owns 80%+ share with razor/blade lock-in. Pension funds treat it as healthcare infrastructure, not tech.",
+              "catalyst": "Da Vinci 5 ramp + international expansion", "asymmetry": "Only 15% of global OR suites penetrated — structural demand, not hype cycle"},
     "TER":   {"sector": "Robotics", "bottleneck": "Semiconductor test equipment", "elite": "Chip supply chain",
-              "thesis": "Teradyne — tests every chip before it ships + Universal Robots cobots. Dual AI play.",
-              "catalyst": "AI chip testing demand + cobot adoption", "asymmetry": "No chip ships without testing — invisible toll booth"},
+              "thesis": "CHIPS Act + export controls force reshored fab buildout. Every chip must pass test before shipment — Teradyne is the invisible toll booth in the semiconductor supply chain. Cobot division benefits from labour scarcity forcing automation.",
+              "catalyst": "AI chip testing demand + cobot adoption", "asymmetry": "No chip ships without testing — capex is non-discretionary"},
     "AXON":  {"sector": "Defense Tech", "bottleneck": "Law enforcement tech", "elite": "Thiel-adjacent",
-              "thesis": "Axon — Taser + body cameras + cloud evidence platform. SaaS for public safety.",
-              "catalyst": "AI-powered report writing + drone integration", "asymmetry": "Government sticky contracts, 95% retention"},
+              "thesis": "US municipal + federal policing budgets are policy-mandated. Body camera laws, evidence management regulations, and use-of-force documentation requirements structurally force law enforcement spend into Axon's platform. 95% retention = sovereign-grade stickiness.",
+              "catalyst": "AI-powered report writing + drone integration", "asymmetry": "Regulatory mandates create forced buyers — not discretionary spend"},
     # ── SPACE / DEFENSE / SOVEREIGNTY ──
     "LHX":   {"sector": "Defense", "bottleneck": "Space & airborne ISR", "elite": "Defense primes",
-              "thesis": "L3Harris — space sensors, electronic warfare, satellite comms. Post-merger integration complete.",
-              "catalyst": "DoD budget increase + space domain awareness", "asymmetry": "Satellites are the new high ground"},
+              "thesis": "Space Force budget is the fastest-growing DoD line item — space domain awareness is now a Congressionally mandated priority. L3Harris builds the ISR sensors, electronic warfare systems, and satellite comms that this doctrine requires. Post-merger, it is the sole-source for classified space payloads that cannot be rebid.",
+              "catalyst": "DoD budget increase + Space Force expansion", "asymmetry": "Space Force mandate + sole-source classified contracts = policy-locked revenue growth"},
     "RKLB":  {"sector": "Space", "bottleneck": "Small launch vehicles", "elite": "Thiel/Founders Fund (early backer)",
-              "thesis": "Rocket Lab — 2nd most frequent orbital launcher after SpaceX. Neutron rocket in development.",
-              "catalyst": "Neutron first launch + Electron cadence increase", "asymmetry": "Space economy $1T by 2040, launch is the bottleneck"},
+              "thesis": "DoD + NRO require sovereign launch capability independent of SpaceX. NATO allies need dedicated small-payload orbital access. Rocket Lab is the only Western alternative at cadence. Space domain awareness is now a Pentagon budget line item — launch is the supply bottleneck.",
+              "catalyst": "Neutron first launch + Electron cadence increase", "asymmetry": "National security policy mandates launch redundancy — SpaceX monopoly is a sovereign risk"},
     "LDOS":  {"sector": "Defense IT", "bottleneck": "Government digital backbone", "elite": "Deep state IT",
-              "thesis": "Leidos — largest pure-play US defense IT. Cyber, AI, digital modernization for DoD/Intel.",
-              "catalyst": "AI integration contracts + cyber warfare spend", "asymmetry": "Government can't function without these systems"},
+              "thesis": "DoD + Intel community digital modernisation is Congressionally mandated and multi-year funded. Leidos holds the classified infrastructure contracts that cannot be rebid easily — switching costs are measured in years and security clearances, not dollars.",
+              "catalyst": "AI integration contracts + cyber warfare spend", "asymmetry": "Classified clearance + legacy system lock-in = structural moat government can't escape"},
     "KTOS":  {"sector": "Defense", "bottleneck": "Drone warfare", "elite": "Thiel ecosystem",
-              "thesis": "Kratos Defense — autonomous drone swarms, jet-powered UAVs, satellite ground systems.",
-              "catalyst": "USAF drone program awards + hypersonic targets", "asymmetry": "Ukraine proved drones reshape warfare"},
+              "thesis": "Ukraine conflict proved autonomous drones restructure force projection economics. Pentagon's Replicator initiative mandates thousands of attritable autonomous systems. Kratos builds the jet-powered target drones and UAVs that this doctrine requires — policy-driven procurement, not speculative R&D.",
+              "catalyst": "USAF Replicator program awards + hypersonic targets", "asymmetry": "Drone warfare doctrine is now NATO policy — procurement is locked in"},
     # ── RARE EARTH / CRITICAL MINERALS ──
     "MP":    {"sector": "Critical Minerals", "bottleneck": "US rare earth supply", "elite": "DoD strategic",
-              "thesis": "MP Materials — only active rare earth mine in the US (Mountain Pass). China controls 80% of processing.",
-              "catalyst": "DoD contracts + processing facility completion", "asymmetry": "No EVs, no wind turbines, no missiles without rare earths"},
+              "thesis": "Executive Order on critical minerals + DoD Title III funding explicitly target rare earth supply chain independence from China (80% of processing). MP Materials operates the only active US rare earth mine. Defense systems (F-35, missiles, satellites) require rare earths that cannot be sourced from adversaries under ITAR. This is a national security supply chain — policy forces domestic sourcing regardless of cost competitiveness.",
+              "catalyst": "DoD contracts + processing facility completion", "asymmetry": "National security mandate + sole domestic source = policy-forced demand regardless of commodity price"},
     "LAC":   {"sector": "Lithium", "bottleneck": "US lithium production", "elite": "GM partnership",
-              "thesis": "Lithium Americas — Thacker Pass is the largest lithium deposit in North America. GM invested $650M.",
-              "catalyst": "Thacker Pass construction milestones + offtake agreements", "asymmetry": "US lithium independence is national security"},
+              "thesis": "IRA battery manufacturing requirements mandate domestic mineral sourcing for EV tax credit eligibility — Thacker Pass is the largest lithium deposit in North America. GM's $650M investment is an OEM-level commitment to secure supply chain. US lithium independence is now Pentagon-designated critical — the alternative is complete dependency on China/Australia for EV battery supply chain.",
+              "catalyst": "Thacker Pass construction milestones + offtake agreements", "asymmetry": "IRA domestic sourcing rules + OEM offtakes = policy-mandated demand for the largest North American deposit"},
     # ── LONGEVITY / BIOTECH ──
     "REGN":  {"sector": "Biotech", "bottleneck": "Antibody platform", "elite": "Leonard Schleifer vision",
-              "thesis": "Regeneron — Eylea + Dupixent + obesity pipeline. Antibody factory approach to drug discovery.",
-              "catalyst": "Obesity drug data + Dupixent label expansion", "asymmetry": "Platform generates $15B+ and still accelerating"},
+              "thesis": "Medicare/Medicaid reimbursement structures incentivise biologics over small molecules — Regeneron's antibody platform is structurally favoured by payer economics. Obesity drug pipeline enters a $100B+ market where insurer mandates are expanding coverage. Sovereign health systems globally are forced buyers of Dupixent-class drugs.",
+              "catalyst": "Obesity drug data + Dupixent label expansion", "asymmetry": "Payer economics + label expansion = policy-driven revenue growth, not speculative pipeline"},
     "EXAS":  {"sector": "Diagnostics", "bottleneck": "Cancer early detection", "elite": "Longevity movement",
-              "thesis": "Exact Sciences — Cologuard for colorectal cancer + multi-cancer early detection tests.",
-              "catalyst": "FDA multi-cancer blood test approval", "asymmetry": "Detecting cancer at Stage 1 vs Stage 4 changes everything"},
+              "thesis": "CMS Medicare reimbursement policy is expanding coverage for multi-cancer screening — this is a policy mandate that creates forced demand. Stage 1 detection costs $30K to treat vs $300K+ at Stage 4, giving insurers structural incentive to mandate screening. FDA approval pathway is de-risked by established Cologuard precedent.",
+              "catalyst": "FDA multi-cancer blood test approval", "asymmetry": "Payer economics force adoption — early detection saves 10x treatment cost"},
     "BEAM":  {"sector": "Gene Editing", "bottleneck": "Base editing precision", "elite": "a16z Bio",
-              "thesis": "Beam Therapeutics — next-gen CRISPR (base editing). More precise than cut-and-paste CRISPR.",
-              "catalyst": "Clinical trial readouts + sickle cell data", "asymmetry": "If base editing works, it's the upgrade to CRISPR"},
+              "thesis": "FDA approval of Casgevy (CRISPR therapy) created regulatory precedent for gene editing — capital is now structurally attracted because the regulatory pathway is proven. Base editing is the precision upgrade: single-nucleotide changes without double-strand breaks. Sovereign health systems facing sickle cell treatment costs ($1M+/patient lifetime) are incentivised to fund curative therapies.",
+              "catalyst": "Clinical trial readouts + sickle cell data", "asymmetry": "Regulatory precedent + curative economics force capital into next-gen editing"},
     # ── FINANCIAL SYSTEM 2.0 ──
     "SQ":    {"sector": "Fintech", "bottleneck": "SMB financial OS", "elite": "Jack Dorsey",
-              "thesis": "Block (Square) — Cash App + Bitcoin + merchant payments. Building crypto-native finance.",
-              "catalyst": "Bitcoin integration + Cash App lending", "asymmetry": "2B unbanked people need a financial system, not a bank"},
+              "thesis": "Basel III + bank capital requirements force traditional banks to abandon small-business lending. Block fills the structural gap — Cash App + merchant payments capture the unbanked/underbanked flows that regulated banks can no longer profitably serve. Bitcoin integration positions for sovereign digital currency regimes.",
+              "catalyst": "Bitcoin integration + Cash App lending", "asymmetry": "Banking regulation creates the vacuum — Block is the liquidity path for those excluded"},
     "SOFI":  {"sector": "Fintech", "bottleneck": "Digital bank platform", "elite": "Thiel-adjacent (ex-SoFi team)",
-              "thesis": "SoFi — bank charter + lending + investing + Galileo platform. Full-stack fintech.",
-              "catalyst": "Bank charter leverage + Galileo growth", "asymmetry": "Traditional banks can't innovate this fast"},
+              "thesis": "Bank charter gives SoFi deposit-gathering rights that pure fintechs lack — structural funding cost advantage. Galileo platform is the backend infrastructure other fintechs run on. As traditional banks consolidate branches, digital-native banks capture the deposit migration structurally.",
+              "catalyst": "Bank charter leverage + Galileo growth", "asymmetry": "Deposit migration from branch banking to digital is demographic, not cyclical"},
     "HOOD":  {"sector": "Fintech", "bottleneck": "Retail trading infra", "elite": "a16z backed",
-              "thesis": "Robinhood — democratized trading. Gold subscribers + crypto + retirement accounts.",
-              "catalyst": "UK/EU expansion + crypto revenue diversification", "asymmetry": "Gen Z's default brokerage"},
+              "thesis": "SEC crypto regulatory clarity + 401(k) portability rules structurally expand retail capital formation. Robinhood owns the rails for Gen Z/Millennial capital flows — retirement accounts, crypto, options. Generational wealth transfer ($84T) needs a platform, and legacy brokerages are losing share.",
+              "catalyst": "UK/EU expansion + crypto revenue diversification", "asymmetry": "$84T generational wealth transfer flows through the platform generation already uses"},
     # ── WATER / INFRASTRUCTURE ──
     "XYL":   {"sector": "Water", "bottleneck": "Water infrastructure", "elite": "Infrastructure bill",
-              "thesis": "Xylem — water tech: pumps, treatment, analytics. Every city needs clean water infrastructure.",
-              "catalyst": "Infrastructure bill spending + smart water tech", "asymmetry": "Water scarcity is the most underpriced risk on Earth"},
+              "thesis": "IIJA allocates $55B for water infrastructure — this is Congressionally appropriated spend flowing through municipal budgets over 5+ years. EPA lead pipe replacement mandates force municipal procurement. PFAS contamination regulations (EPA 2024 rule) require treatment system upgrades nationally. Capital is policy-mandated at every level of government.",
+              "catalyst": "Infrastructure bill spending + PFAS regulation compliance", "asymmetry": "EPA mandates + lead pipe rules + IIJA funding = triple policy-forced demand"},
     "AWK":   {"sector": "Water", "bottleneck": "US water utility monopoly", "elite": "Regulated utility",
-              "thesis": "American Water Works — largest US water utility. Regulated monopoly with rate base growth.",
-              "catalyst": "Rate case approvals + acquisition pipeline", "asymmetry": "You can't un-need water. Pipes are 80+ years old"},
+              "thesis": "Regulated utility monopoly with guaranteed rate-of-return — capital is structurally attracted because returns are state-sanctioned. US water pipes average 80+ years old (designed lifespan: 50). Municipal systems are failing and being privatised into AWK at regulated premiums. Climate-driven water scarcity forces infrastructure investment that rate bases grow from. Pension funds treat regulated water as inflation-protected infrastructure.",
+              "catalyst": "Rate case approvals + acquisition pipeline", "asymmetry": "State-guaranteed returns + failing infrastructure + climate pressure = forced capital for decades"},
     # ── MANUFACTURING / RESHORING ──
     "FLEX":  {"sector": "Manufacturing", "bottleneck": "Electronics reshoring", "elite": "Supply chain shift",
-              "thesis": "Flex Ltd — contract manufacturer for AI servers, EVs, medical devices. Reshoring beneficiary.",
-              "catalyst": "AI server buildout + reshoring wave", "asymmetry": "Manufacturing is coming back to allies — Flex is ready"},
+              "thesis": "CHIPS Act + tariff escalation + supply chain executive orders structurally force electronics manufacturing out of China. Flex operates in allied nations (Mexico, Malaysia, US) — reshoring policy creates the demand. AI server buildout requires physical manufacturing capacity that takes years to build. Policy risk of China dependency forces OEMs to diversify to Flex.",
+              "catalyst": "AI server buildout + reshoring wave", "asymmetry": "Reshoring is policy-mandated, not optional — manufacturing capacity in allied nations is scarce"},
     "EMR":   {"sector": "Industrial", "bottleneck": "Industrial automation", "elite": "Institutional core",
-              "thesis": "Emerson Electric — factory automation + process control. AspenTech acquisition adds AI for plants.",
-              "catalyst": "LNG buildout + factory automation spend", "asymmetry": "Every factory needs automation to compete with China"},
+              "thesis": "Labour scarcity in manufacturing (3.5M unfilled US factory jobs by 2030) structurally forces automation spend. LNG export terminal buildout is policy-driven (energy security) and requires Emerson's process control systems. AspenTech acquisition positions for AI-driven plant optimisation — a forced upgrade as energy transition mandates efficiency gains.",
+              "catalyst": "LNG buildout + factory automation spend", "asymmetry": "Labour shortage + policy-mandated energy infrastructure = non-discretionary automation spend"},
     # ── AI INFRASTRUCTURE (non-obvious) ──
     "VRT":   {"sector": "Data Centre", "bottleneck": "Power & cooling", "elite": "Jensen/NVIDIA ecosystem",
-              "thesis": "Vertiv — power and thermal management for data centres. NVIDIA can't run without cooling.",
-              "catalyst": "Liquid cooling demand + hyperscaler capex", "asymmetry": "AI is an energy problem — Vertiv solves the heat"},
+              "thesis": "Hyperscaler capex ($200B+/year) is committed multi-year spend — Vertiv's thermal management is a physics constraint, not a purchase decision. AI GPU clusters dissipate 70kW+ per rack vs 10kW traditional. Liquid cooling transition is forced by thermodynamics: air cooling physically cannot handle AI density. Capital flows here because the alternative is stranded GPU investments.",
+              "catalyst": "Liquid cooling demand + hyperscaler capex", "asymmetry": "Physics constraint — no cooling solution = no AI infrastructure. Capital is forced, not attracted"},
     "ANET":  {"sector": "Networking", "bottleneck": "AI data centre networking", "elite": "Jensen/NVIDIA ecosystem",
-              "thesis": "Arista Networks — Ethernet switching for AI clusters. 400G/800G networking for GPU-to-GPU communication.",
-              "catalyst": "800G adoption + Meta/Microsoft buildout", "asymmetry": "GPUs are useless without the network connecting them"},
+              "thesis": "AI training clusters require GPU-to-GPU communication at 400G/800G speeds — this is a physics bottleneck, not a product cycle. Hyperscaler capex allocations structurally include networking as non-negotiable infrastructure. Arista's Ethernet approach wins vs InfiniBand at scale because it's an open standard that hyperscalers can control. Meta + Microsoft buildout is committed multi-year capex.",
+              "catalyst": "800G adoption + Meta/Microsoft buildout", "asymmetry": "Networking is the constraint that determines cluster efficiency — GPU capex is wasted without it"},
     "MRVL":  {"sector": "Semiconductors", "bottleneck": "Custom AI silicon", "elite": "Cloud hyperscaler deals",
-              "thesis": "Marvell — custom chips for AWS, Google, Microsoft. AI networking + storage controllers.",
-              "catalyst": "Custom silicon ramp + 5nm transition", "asymmetry": "Every hyperscaler wants custom chips, Marvell builds them"},
+              "thesis": "Hyperscalers (AWS, Google, Microsoft) are structurally incentivised to reduce NVIDIA dependency through custom silicon — geopolitical supply chain risk + margin economics force diversification. Marvell designs these custom chips. This is a supply chain de-risking play driven by institutional capital allocation logic, not a product story.",
+              "catalyst": "Custom silicon ramp + 5nm transition", "asymmetry": "Hyperscaler NVIDIA dependency is a board-level risk — custom silicon is the hedge, and Marvell builds it"},
     "MU":    {"sector": "Memory", "bottleneck": "HBM memory for AI", "elite": "NVIDIA supply chain",
-              "thesis": "Micron — HBM3E memory sits on top of every AI GPU. No HBM = no AI training.",
-              "catalyst": "HBM3E production ramp + pricing power", "asymmetry": "Memory is the bottleneck everyone forgot about"},
+              "thesis": "HBM3E sits physically on top of every AI GPU — this is a supply chain chokepoint with only 3 global suppliers (Samsung, SK Hynix, Micron). CHIPS Act subsidises US memory manufacturing, creating policy-driven margin support. AI training demand growth outpaces HBM supply expansion by 2-3 years, giving structural pricing power. Capital is forced because without HBM, GPU investments are stranded.",
+              "catalyst": "HBM3E production ramp + pricing power", "asymmetry": "3-supplier oligopoly + demand/supply mismatch = multi-year pricing power"},
     "ACLS":  {"sector": "Semiconductors", "bottleneck": "Ion implant equipment", "elite": "Chip equipment chain",
-              "thesis": "Axcelis Technologies — ion implantation for SiC power chips. EV + AI power management.",
-              "catalyst": "SiC adoption in EVs + AI power delivery", "asymmetry": "Niche monopoly in a critical chip-making step"},
+              "thesis": "CHIPS Act fab buildout + EV mandates (EU 2035 ban, US EPA standards) structurally force SiC power chip production expansion. Every SiC wafer requires ion implantation — Axcelis is the niche monopoly in this step. Fab construction timelines mean equipment orders precede production by 2-3 years, creating locked-in demand. Export controls add urgency to allied-nation capacity buildout.",
+              "catalyst": "SiC adoption in EVs + AI power delivery", "asymmetry": "Niche monopoly in a CHIPS Act-mandated supply chain step — no alternative equipment exists"},
     "LSCC":  {"sector": "Semiconductors", "bottleneck": "Low-power FPGA for edge AI + defense", "elite": "DoD supply chain",
-              "thesis": "Lattice Semiconductor — FPGAs for edge compute, defense, automotive, 5G. Only pure-play low-power FPGA maker.",
-              "catalyst": "Edge AI adoption + defense electronics modernisation", "asymmetry": "Edge devices can't use big GPUs — Lattice owns the low-power niche"},
+              "thesis": "DoD electronics modernisation requires FPGA programmability for classified systems — Lattice is the only US-headquartered pure-play low-power FPGA maker. Edge AI deployment (drones, satellites, vehicles) physically cannot use data centre GPUs — low-power FPGAs are the forced alternative. ITAR restrictions on defense electronics create a captive domestic customer base. 5G infrastructure buildout mandates programmable edge silicon.",
+              "catalyst": "Edge AI adoption + defense electronics modernisation", "asymmetry": "ITAR restrictions + edge physics constraints = captive demand for the only US low-power FPGA supplier"},
     # ── AI / CLOUD HYPERSCALE ──
     "NVDA":  {"sector": "AI Compute", "bottleneck": "GPU monopoly for AI training", "elite": "Every sovereign fund + hyperscaler",
-              "thesis": "NVIDIA — 90%+ share of AI training GPUs. CUDA ecosystem lock-in. Data centre revenue >$100B run-rate.",
-              "catalyst": "Blackwell ramp + sovereign AI buildout", "asymmetry": "AI capex is non-discretionary — you buy NVIDIA or you fall behind"},
+              "thesis": "Sovereign AI mandates (UAE, Saudi, India, EU) force government-level GPU procurement. Hyperscaler capex is non-discretionary — falling behind in AI compute is a geopolitical risk, not a business decision. CUDA lock-in means switching costs exceed the cost of the GPUs themselves. 90%+ training share is a policy-grade chokepoint.",
+              "catalyst": "Blackwell ramp + sovereign AI buildout", "asymmetry": "Export controls make NVIDIA GPUs a geopolitical instrument — demand is policy-driven, not market-driven"},
     "MSFT":  {"sector": "Cloud / AI", "bottleneck": "Enterprise AI + cloud infra", "elite": "Largest pension/SWF holding globally",
-              "thesis": "Microsoft — Azure + OpenAI partnership + Copilot across Office. Enterprise AI monetisation leader.",
-              "catalyst": "Copilot revenue inflection + Azure AI workloads", "asymmetry": "400M Office users = instant AI distribution"},
+              "thesis": "Largest pension/SWF holding globally — passive fund mandates force continuous capital allocation. Azure + OpenAI partnership gives enterprise AI distribution no competitor can match. Government cloud contracts (JEDI successor) lock in sovereign spend. Copilot across 400M Office seats is the largest AI monetisation surface ever assembled.",
+              "catalyst": "Copilot revenue inflection + Azure AI workloads", "asymmetry": "Passive fund flows + government contracts = structurally forced capital regardless of sentiment"},
     "GOOGL": {"sector": "Cloud / AI", "bottleneck": "Search + AI infrastructure", "elite": "Institutional mega-cap core",
-              "thesis": "Alphabet — Gemini AI + Google Cloud + YouTube. Search monopoly funds massive AI R&D.",
-              "catalyst": "Gemini integration + cloud AI revenue growth", "asymmetry": "Owns more AI training data than anyone alive"},
+              "thesis": "Antitrust outcome paradoxically forces capital clarity — breakup would unlock sum-of-parts value, settlement preserves monopoly cash flows. Either path rewards holders. Google Cloud captures enterprise AI migration that CIOs are policy-mandated to execute. DeepMind's research output feeds sovereign AI programs globally.",
+              "catalyst": "Gemini integration + cloud AI revenue growth", "asymmetry": "Antitrust resolution is a win-win catalyst — breakup or settlement both unlock value"},
     "AMZN":  {"sector": "Cloud / AI", "bottleneck": "Cloud infrastructure (AWS)", "elite": "Institutional mega-cap core",
-              "thesis": "Amazon — AWS is the backbone of the internet. Trainium custom chips + Bedrock AI platform.",
-              "catalyst": "AWS re-acceleration + Trainium adoption", "asymmetry": "AWS runs 30%+ of global cloud — too embedded to displace"},
+              "thesis": "AWS runs 30%+ of global cloud — government agencies, banks, and enterprises are contractually embedded. Switching costs are measured in years of re-architecture. Trainium custom silicon reduces dependency on NVIDIA, giving hyperscalers a supply chain hedge. Institutional capital treats AWS revenue as infrastructure-grade recurring.",
+              "catalyst": "AWS re-acceleration + Trainium adoption", "asymmetry": "Embedded infrastructure cannot be displaced — AWS is the cloud equivalent of the electrical grid"},
     "META":  {"sector": "AI / Social", "bottleneck": "AI-powered advertising + open-source LLMs", "elite": "Institutional mega-cap core",
-              "thesis": "Meta — Llama open-source AI + 3B daily users + Reality Labs. Largest open-weight AI model provider.",
-              "catalyst": "Llama monetisation + AI-driven ad revenue", "asymmetry": "3B users = largest AI feedback loop on Earth"},
+              "thesis": "3B daily users create the largest proprietary data feedback loop — this is a structural advantage in AI training that cannot be replicated by policy or capital. Llama open-source strategy forces competitors to compete on Meta's terms. Ad revenue is GDP-correlated, making it a macro hedge — advertising spend is the last budget cut in a downturn.",
+              "catalyst": "Llama monetisation + AI-driven ad revenue", "asymmetry": "Proprietary data moat + GDP-linked revenue = structural capital attraction regardless of AI narrative"},
     "ORCL":  {"sector": "Cloud / AI", "bottleneck": "Enterprise database + cloud AI", "elite": "SWF accumulation (Saudi PIF)",
-              "thesis": "Oracle — OCI cloud growing fastest. Multi-cloud AI training deals with NVIDIA, OpenAI, xAI.",
-              "catalyst": "OCI AI capacity backlog + sovereign cloud deals", "asymmetry": "$100B+ remaining performance obligations"},
+              "thesis": "Saudi PIF + sovereign wealth fund accumulation signals geopolitical capital alignment. Oracle's sovereign cloud contracts (data residency requirements) force governments to use jurisdiction-specific cloud — a policy-created moat. $100B+ remaining performance obligations are contractually locked revenue, not projections.",
+              "catalyst": "OCI AI capacity backlog + sovereign cloud deals", "asymmetry": "Data sovereignty laws structurally force government cloud spend into jurisdiction-compliant providers — Oracle built for this"},
     # ── SEMICONDUCTORS — CHOKEPOINT SUPPLY CHAIN ──
     "TSM":   {"sector": "Semiconductors", "bottleneck": "Advanced chip fabrication monopoly", "elite": "Buffett position + sovereign strategic",
-              "thesis": "TSMC — fabricates 90%+ of advanced chips globally. Apple, NVIDIA, AMD all depend on TSMC.",
-              "catalyst": "Arizona fab ramp + AI chip demand surge", "asymmetry": "No TSMC = no AI, no smartphones, no modern military"},
+              "thesis": "90%+ of advanced chip fabrication runs through TSMC — this is the single most strategically important chokepoint in the global economy. Taiwan Strait geopolitical risk forces sovereign capital into hedging strategies (Arizona fab, Japan fab) that TSMC controls. CHIPS Act subsidises Arizona expansion specifically to reduce this vulnerability. Every AI chip, every smartphone, every military system depends on this one company.",
+              "catalyst": "Arizona fab ramp + AI chip demand surge", "asymmetry": "Geopolitical risk premium + absolute manufacturing monopoly = sovereign-grade capital attraction"},
     "ASML":  {"sector": "Semiconductors", "bottleneck": "EUV lithography monopoly", "elite": "European strategic asset",
-              "thesis": "ASML — sole manufacturer of EUV machines. Every advanced chip on Earth requires ASML equipment.",
-              "catalyst": "High-NA EUV adoption + export control dynamics", "asymmetry": "Absolute monopoly — no alternative exists or is coming"},
+              "thesis": "Absolute global monopoly — no alternative EUV manufacturer exists or is in development. Dutch export controls on China make ASML a geopolitical instrument wielded by NATO allies. Every advanced chip on Earth requires ASML equipment with 2+ year lead times. EU treats ASML as strategic sovereign infrastructure. Capital is forced because there is literally no substitute — the monopoly is physics-based, not market-based.",
+              "catalyst": "High-NA EUV adoption + export control dynamics", "asymmetry": "Physics-based monopoly + geopolitical instrument status = structurally unassailable position"},
     # ── DEFENSE PRIMES ──
     "LMT":   {"sector": "Defense", "bottleneck": "F-35 + missile systems", "elite": "US DoD prime contractor",
-              "thesis": "Lockheed Martin — #1 defense contractor. F-35, Javelin, THAAD, hypersonics, space systems.",
-              "catalyst": "NATO rearmament + Indo-Pacific deterrence spend", "asymmetry": "Global defense spend at Cold War highs, LMT is the main supplier"},
+              "thesis": "NATO 2% GDP defense mandate (now 3% for frontline states) is policy-forced procurement flowing primarily to US primes. F-35 is the allied interoperability standard — switching is geopolitically impossible. Indo-Pacific deterrence requires missile defense (THAAD, hypersonics) where LMT is sole-source. Congressional defense appropriations are bipartisan and multi-year.",
+              "catalyst": "NATO rearmament + Indo-Pacific deterrence spend", "asymmetry": "NATO mandate + sole-source contracts = policy-locked revenue regardless of political cycle"},
     "RTX":   {"sector": "Defense", "bottleneck": "Missile defense + jet engines", "elite": "US DoD prime contractor",
-              "thesis": "RTX — Raytheon missiles + Pratt & Whitney engines. Patriot, Stinger, AMRAAM demand surging.",
-              "catalyst": "Missile replenishment cycle + F-35 engine ramp", "asymmetry": "Global ammunition stockpiles are depleted — restocking takes a decade"},
+              "thesis": "Global ammunition stockpiles were depleted by Ukraine — NATO restocking is a Congressionally mandated multi-year procurement cycle. Patriot, Stinger, AMRAAM replenishment cannot be accelerated (production takes years to scale). Pratt & Whitney is sole-source for F-35 engines. This is policy-forced demand with zero substitution risk.",
+              "catalyst": "Missile replenishment cycle + F-35 engine ramp", "asymmetry": "Stockpile depletion + production bottleneck = decade-long forced procurement"},
     "NOC":   {"sector": "Defense", "bottleneck": "Nuclear deterrence + stealth", "elite": "US strategic weapons",
-              "thesis": "Northrop Grumman — B-21 Raider bomber, Sentinel ICBM, James Webb telescope. Nuclear triad backbone.",
-              "catalyst": "B-21 production ramp + Sentinel development", "asymmetry": "Nuclear deterrence is non-negotiable sovereign spend"},
+              "thesis": "Nuclear triad modernisation (B-21 Raider, Sentinel ICBM) is Congressionally mandated sovereign spend — the only truly non-discretionary defense budget line. Northrop is sole-source for both programs. Nuclear deterrence is the one defense category that no political party, no budget fight, and no peace dividend can cut. Multi-decade production contracts.",
+              "catalyst": "B-21 production ramp + Sentinel development", "asymmetry": "Sole-source nuclear triad contracts = sovereign-mandated revenue for 30+ years"},
     "GD":    {"sector": "Defense", "bottleneck": "Submarines + armored vehicles", "elite": "US Navy prime",
-              "thesis": "General Dynamics — Virginia-class subs, Columbia-class SSBNs, Abrams tanks, Gulfstream jets.",
-              "catalyst": "AUKUS submarine deal + Army modernisation", "asymmetry": "Submarine production is a 20-year backlog"},
+              "thesis": "AUKUS treaty mandates submarine production for Australia — Congressionally ratified, multi-decade commitment. Columbia-class SSBN is the sea-based nuclear deterrent replacement (non-negotiable). Submarine industrial base has only 2 yards (GD + HII). 20-year production backlog is contractually locked. This is treaty-driven capital, not discretionary defense.",
+              "catalyst": "AUKUS submarine deal + Army modernisation", "asymmetry": "Treaty-mandated + sole-source + 20-year backlog = structurally locked capital flow"},
     # ── CYBERSECURITY ──
     "CRWD":  {"sector": "Cybersecurity", "bottleneck": "Endpoint + cloud security platform", "elite": "US government mandates",
-              "thesis": "CrowdStrike — Falcon platform protects endpoints, cloud, identity. Government + enterprise adoption accelerating.",
-              "catalyst": "Government cyber mandates + platform consolidation", "asymmetry": "Every breach drives more security spend — permanent tailwind"},
+              "thesis": "Executive Order 14028 mandates zero-trust architecture across federal agencies — this is policy-forced procurement, not optional spend. CISA compliance requirements cascade to government contractors (thousands of companies). Every major breach triggers Congressional hearings that expand cyber budgets. CrowdStrike's FedRAMP authorization locks in sovereign contracts.",
+              "catalyst": "Government cyber mandates + platform consolidation", "asymmetry": "Policy mandates create forced buyers — cyber budgets only ratchet upward after incidents"},
     "PANW":  {"sector": "Cybersecurity", "bottleneck": "Network security + SASE", "elite": "Enterprise standard",
-              "thesis": "Palo Alto Networks — platformisation strategy consolidating firewalls, SASE, SOC. Largest pure-play cyber company.",
-              "catalyst": "Platformisation ARR growth + AI-driven SOC", "asymmetry": "Cyber attacks escalate with AI — defense spend must follow"},
+              "thesis": "Insurance industry now mandates specific cybersecurity standards for policy coverage — companies without platform-grade security face uninsurable risk. SASE/zero-trust consolidation is driven by compliance requirements (SOC2, CMMC, GDPR), not vendor preference. Palo Alto's platformisation captures the consolidation spend that regulation forces.",
+              "catalyst": "Platformisation ARR growth + AI-driven SOC", "asymmetry": "Cyber insurance mandates + compliance requirements = structurally forced platform adoption"},
     # ── HEALTHCARE / PHARMA / LONGEVITY ──
     "LLY":   {"sector": "Pharma", "bottleneck": "GLP-1 obesity + diabetes", "elite": "Largest pharma by market cap",
-              "thesis": "Eli Lilly — Mounjaro + Zepbound are the biggest drug launches in history. Obesity is a $100B+ market.",
-              "catalyst": "Supply expansion + new indications (NASH, sleep apnea)", "asymmetry": "700M people globally have obesity — supply can't meet demand for years"},
+              "thesis": "Medicare/Medicaid obesity drug coverage expansion is a policy catalyst that converts 700M potential patients into reimbursable demand. Employer health plans face structural incentive — GLP-1 drugs reduce downstream costs (heart disease, diabetes, joint replacement) by 30-40%. Supply constraint creates pricing power that lasts years. Sovereign health systems globally are forced to evaluate coverage.",
+              "catalyst": "Supply expansion + new indications (NASH, sleep apnea)", "asymmetry": "Payer economics force coverage expansion — obesity treatment saves more than it costs"},
     "UNH":   {"sector": "Healthcare", "bottleneck": "US healthcare infrastructure", "elite": "Largest health insurer + Optum data",
-              "thesis": "UnitedHealth — insures 50M Americans + Optum health services + data analytics. Healthcare backbone.",
-              "catalyst": "Medicare Advantage growth + Optum AI integration", "asymmetry": "Aging population = structural demand — can't be disrupted easily"},
+              "thesis": "US demographic structure (10,000 Americans turn 65 daily until 2030) creates policy-mandated Medicare demand growth. UnitedHealth captures this through Medicare Advantage — government-funded, privately administered. Optum's data infrastructure makes it the information chokepoint of US healthcare. Pension funds treat UNH as demographic infrastructure, not a health stock.",
+              "catalyst": "Medicare Advantage growth + Optum AI integration", "asymmetry": "Demographic mandate — aging population creates non-discretionary demand for decades"},
     # ── INFRASTRUCTURE / GRID / ELECTRICAL ──
     "ETN":   {"sector": "Electrical Infrastructure", "bottleneck": "Power management for AI + grid", "elite": "Institutional infrastructure play",
-              "thesis": "Eaton — electrical equipment for data centres, grid, EV charging. Power management is the bottleneck behind AI.",
-              "catalyst": "Data centre power demand + grid modernisation spend", "asymmetry": "Every new AI data centre needs Eaton equipment — invisible infrastructure"},
+              "thesis": "IRA + IIJA allocate $370B+ for grid modernisation and clean energy — Eaton manufactures the electrical equipment this policy mandates. Every AI data centre requires power distribution, switchgear, and UPS systems. Utility capex cycles are 20-year programs, not quarterly decisions. Capital is forced by grid physics: you cannot deliver power without this equipment.",
+              "catalyst": "Data centre power demand + grid modernisation spend", "asymmetry": "Policy-mandated grid investment creates non-discretionary demand for electrical infrastructure"},
     "PWR":   {"sector": "Grid Infrastructure", "bottleneck": "Electrical grid construction", "elite": "Infrastructure bill beneficiary",
-              "thesis": "Quanta Services — builds power grids, telecom networks, pipelines. Largest electrical contractor in US.",
-              "catalyst": "Grid hardening + renewable interconnection backlog", "asymmetry": "US grid needs $2T+ investment — Quanta is the builder"},
+              "thesis": "IIJA infrastructure law + IRA clean energy mandates require physical grid construction — Quanta Services is the largest electrical contractor and the labour bottleneck. Renewable interconnection backlog ($2T+) is policy-created demand. Skilled electrical labour shortage means pricing power for the companies that have the workforce.",
+              "catalyst": "Grid hardening + renewable interconnection backlog", "asymmetry": "Labour scarcity + policy mandates = pricing power that lasts the infrastructure cycle"},
     # ── ENERGY MAJORS ──
     "XOM":   {"sector": "Energy", "bottleneck": "Global oil & gas supply", "elite": "Largest Western oil major",
-              "thesis": "ExxonMobil — Permian Basin dominance + Pioneer acquisition. Energy security = national security.",
-              "catalyst": "Permian production growth + Pioneer synergies", "asymmetry": "World still runs on oil — transition takes decades, not years"},
+              "thesis": "European energy sanctions on Russia structurally redirected LNG demand to US producers. SPR drawdown depleted US strategic reserves — restocking creates policy-driven demand. Pioneer acquisition consolidates Permian Basin into fewer hands, reducing competition and supporting pricing. Sovereign wealth funds (Norway, Abu Dhabi) hold XOM as energy security infrastructure.",
+              "catalyst": "Permian production growth + Pioneer synergies", "asymmetry": "Sanctions + SPR restocking + consolidation = policy-driven pricing power"},
     "CVX":   {"sector": "Energy", "bottleneck": "LNG + Permian production", "elite": "Institutional energy core",
-              "thesis": "Chevron — Permian Basin + global LNG portfolio + Hess acquisition for Guyana.",
-              "catalyst": "Hess/Guyana production ramp + LNG demand", "asymmetry": "European + Asian LNG demand is structural, not cyclical"},
+              "thesis": "European gas decoupling from Russia creates structural LNG demand lasting 20+ years — not a commodity cycle. Guyana (via Hess acquisition) is the lowest-cost offshore barrel globally, making CVX profitable across all oil price scenarios. Asian LNG contracts are being signed for 15-year terms, locking in demand. Pension funds treat integrated energy majors as inflation hedges.",
+              "catalyst": "Hess/Guyana production ramp + LNG demand", "asymmetry": "Long-term LNG contracts + lowest-cost barrels = structural advantage regardless of oil price"},
     # ── PRIVATE CAPITAL / ALTERNATIVE ASSET MANAGERS ──
     "BX":    {"sector": "Alternative Assets", "bottleneck": "Private equity + real estate + credit", "elite": "Schwarzman — Davos/sovereign fund access",
-              "thesis": "Blackstone — $1T+ AUM. Private equity, real estate, credit, infrastructure. Gatekeeper of institutional capital.",
-              "catalyst": "Private credit expansion + infrastructure deals", "asymmetry": "Capital is flowing from public to private markets — Blackstone is the toll bridge"},
+              "thesis": "Structural capital migration from public to private markets — pension funds, sovereign wealth funds, and endowments are policy-mandated to increase alternative allocations (target 30-40% vs current 20%). Blackstone is the gatekeeper with $1T+ AUM and Schwarzman's sovereign fund access (Abu Dhabi, Singapore, Saudi). Private credit expansion is forced by Basel III bank capital requirements pushing loans off bank balance sheets.",
+              "catalyst": "Private credit expansion + infrastructure deals", "asymmetry": "Pension allocation mandates + Basel III bank deleveraging = structural capital flow into alternatives"},
     "KKR":   {"sector": "Alternative Assets", "bottleneck": "Private equity + infrastructure", "elite": "S&P 500 inclusion + institutional flow",
-              "thesis": "KKR — private equity, infrastructure, credit. S&P 500 entry drives passive fund buying.",
-              "catalyst": "Infrastructure fund deployment + Asia expansion", "asymmetry": "Alternative assets growing 2x faster than public markets"},
+              "thesis": "S&P 500 inclusion forces passive fund buying — every index fund must now hold KKR, creating structural demand. IIJA infrastructure spending flows through private infrastructure funds that KKR manages. Asian sovereign wealth fund allocations to alternatives are growing 2x faster than Western allocations — KKR's Asia platform captures this structural shift.",
+              "catalyst": "Infrastructure fund deployment + Asia expansion", "asymmetry": "Index inclusion + infrastructure policy spend + Asian SWF allocation shift = triple structural capital flow"},
     "APO":   {"sector": "Alternative Assets", "bottleneck": "Private credit + retirement", "elite": "Athene retirement platform",
-              "thesis": "Apollo — largest private credit platform + Athene retirement. Building permanent capital base.",
-              "catalyst": "Private credit replacing bank lending + Athene growth", "asymmetry": "Basel III pushes loans from banks to private credit — Apollo catches them"},
+              "thesis": "Basel III endgame forces banks to hold more capital against loans — structurally pushing $3T+ in lending from bank balance sheets into private credit. Apollo is the largest private credit platform positioned to absorb this regulatory-driven flow. Athene retirement captures the $84T generational wealth transfer into annuity products. This is a regulatory arbitrage play — Basel rules create the supply, demographic shift creates the demand.",
+              "catalyst": "Private credit replacing bank lending + Athene growth", "asymmetry": "Basel III regulatory arbitrage + demographic wealth transfer = dual structural capital migration into Apollo"},
     # ── FOOD / AGRICULTURE ──
     "DE":    {"sector": "Agriculture", "bottleneck": "Precision agriculture equipment", "elite": "Institutional core + food security",
-              "thesis": "Deere & Company — autonomous tractors, precision planting, AI-powered farming. Feeds the world.",
-              "catalyst": "Autonomous farming adoption + replacement cycle", "asymmetry": "9B people need food — farming must get more efficient, not less"},
+              "thesis": "Global food security is now a sovereign priority — Ukraine conflict disrupted 30% of global wheat trade, forcing governments to subsidise domestic agricultural productivity. Farm labour shortage (structural, demographic) forces mechanisation. EPA sustainability regulations require precision application (less fertiliser, less water) that only Deere's AI-driven equipment delivers. Sovereign wealth funds hold DE as food infrastructure.",
+              "catalyst": "Autonomous farming adoption + replacement cycle", "asymmetry": "Food security policy + labour shortage + environmental regulation = triple-forced demand for precision agriculture"},
     "ADM":   {"sector": "Agriculture", "bottleneck": "Global grain processing + logistics", "elite": "Food supply chain backbone",
-              "thesis": "Archer-Daniels-Midland — processes and transports grain globally. Critical food infrastructure.",
-              "catalyst": "Food security concerns + biofuel demand", "asymmetry": "Grain supply chains are strategic — you can't eat semiconductors"},
+              "thesis": "Ukraine conflict exposed the fragility of global grain supply chains — governments now treat grain processing and logistics as strategic infrastructure. ADM controls chokepoints in soybean, corn, and wheat processing that cannot be replicated (river barge networks, port terminals, storage). Biofuel mandates (RFS, EU RED III) create policy-locked demand for processed agricultural commodities.",
+              "catalyst": "Food security concerns + biofuel mandate expansion", "asymmetry": "Infrastructure chokepoints + biofuel mandates + food security policy = structurally captive demand"},
     # ── SHIPPING / LOGISTICS ──
     "ZIM":   {"sector": "Shipping", "bottleneck": "Container shipping", "elite": "Israeli state-linked",
-              "thesis": "ZIM — container shipping exposed to Red Sea disruption, global trade re-routing. Volatile but strategic.",
-              "catalyst": "Red Sea disruption premium + rate recovery", "asymmetry": "90% of world trade moves by sea — shipping is the real supply chain"},
+              "thesis": "Houthi Red Sea attacks forced global shipping reroutes around Cape of Good Hope — adding 10-14 days per voyage and absorbing 15%+ of global container capacity. This is a geopolitical supply constraint, not a market cycle. Freight rates are structurally elevated as long as Red Sea remains unsafe. ZIM's exposure to this disruption creates volatility-premium pricing power.",
+              "catalyst": "Red Sea disruption premium + rate recovery", "asymmetry": "Geopolitical shipping disruption absorbs capacity — rates stay elevated until conflict resolution, which has no timeline"},
     "FDX":   {"sector": "Logistics", "bottleneck": "Global package logistics", "elite": "Institutional core",
-              "thesis": "FedEx — global logistics backbone. DRIVE restructuring cutting $4B costs. E-commerce structural growth.",
-              "catalyst": "DRIVE cost savings + network optimisation", "asymmetry": "Global trade needs logistics — FedEx is the infrastructure"},
+              "thesis": "Reshoring + friend-shoring policies structurally increase cross-border logistics demand between allied nations. E-commerce penetration is a one-way structural shift in package volume. DRIVE restructuring is extracting $4B in costs — creating margin expansion from operational leverage, not revenue growth. Institutional capital treats FedEx as trade infrastructure correlated to global GDP.",
+              "catalyst": "DRIVE cost savings + network optimisation", "asymmetry": "Reshoring policy + e-commerce structural shift = logistics demand that only grows"},
     # ── QUANTUM / NEXT-GEN COMPUTE ──
     "IONQ":  {"sector": "Quantum Computing", "bottleneck": "Trapped-ion quantum hardware", "elite": "Amazon + government contracts",
-              "thesis": "IonQ — leading quantum computing company. Government + enterprise contracts. AWS Braket integration.",
-              "catalyst": "Quantum advantage demonstrations + government funding", "asymmetry": "Quantum breaks current encryption — governments must invest or be vulnerable"},
+              "thesis": "NSA + NIST post-quantum cryptography mandates force government agencies to prepare for quantum threat — this creates policy-driven procurement for quantum R&D. CHIPS and Science Act includes quantum computing funding. Intelligence community treats quantum as a sovereignty issue (whoever achieves quantum advantage breaks current encryption). IonQ's government contracts are national-security-grade.",
+              "catalyst": "Quantum advantage demonstrations + government funding", "asymmetry": "Encryption vulnerability forces sovereign investment — governments cannot afford to be second in quantum"},
     # ── FINANCIAL INFRASTRUCTURE ──
     "GS":    {"sector": "Investment Banking", "bottleneck": "Capital markets infrastructure", "elite": "Davos/Basel/central bank access",
-              "thesis": "Goldman Sachs — investment banking, trading, asset management. Sees capital flows before anyone else.",
-              "catalyst": "IPO market recovery + trading revenue", "asymmetry": "Goldman is where the deals happen — structural information advantage"},
+              "thesis": "Basel III endgame + bank capital requirements concentrate capital markets activity into the largest banks — Goldman is the primary beneficiary of regulatory consolidation. IPO backlog ($3T+ in private unicorn value) must eventually exit through Goldman's capital markets infrastructure. Fed rate cycle creates trading revenue volatility that Goldman's risk desk monetises better than any competitor. Sovereign wealth funds use Goldman as their primary market access.",
+              "catalyst": "IPO market recovery + trading revenue", "asymmetry": "Regulatory consolidation + IPO backlog + sovereign fund access = structural capital flow concentration"},
 }
 
 
@@ -7836,14 +8016,16 @@ if page == "1️⃣ Market Health":
 
         # ── KEY FINANCIALS ────────────────────────────────────
         st.subheader("📊 Key Financials")
-        f1, f2, f3, f4, f5, f6, f7 = st.columns(7)
-        f1.metric("Revenue",    fmt(safe(info,"totalRevenue"), "$"))
-        f2.metric("Cash",       fmt(safe(info,"totalCash"), "$"))
-        f3.metric("Total Debt", fmt(safe(info,"totalDebt"), "$"))
-        f4.metric("Assets",     fmt(safe(info,"totalAssets"), "$"))
-        f5.metric("EPS (TTM)",  fmt(safe(info,"trailingEps"), "$", dec=2))
-        f6.metric("P/E",        fmt(safe(info,"trailingPE"), dec=1))
-        f7.metric("Profit Mgn", f"{(safe(info,'profitMargins',default=0) or 0)*100:.1f}%")
+        render_financial_metric_grid([
+            ("Revenue", fmt(safe(info, "totalRevenue"), "$")),
+            ("Cash", fmt(safe(info, "totalCash"), "$")),
+            ("Total Debt", fmt(safe(info, "totalDebt"), "$")),
+            ("Market Cap", fmt(safe(info, "marketCap"), "$")),
+            ("Assets", fmt(safe(info, "totalAssets"), "$")),
+            ("Liabilities", fmt(safe(info, "totalLiab", "totalLiabilitiesNetMinorityInterest"), "$")),
+            ("EPS / P/E", f"{fmt(safe(info, 'trailingEps'), '$', dec=2)} / {fmt(safe(info, 'trailingPE'), dec=1)}"),
+            ("Profit Mgn", f"{(safe(info, 'profitMargins', default=0) or 0) * 100:.1f}%"),
+        ])
 
         st.divider()
 
@@ -7857,6 +8039,8 @@ if page == "1️⃣ Market Health":
 
         cfis   = cfis_composite(scores)
         opp    = opportunity_score(cfis, info, hist)
+        enriched = fetch_enriched_data(ticker)
+        render_source_confidence(info, hist, inst, maj, opt_dates, social, enriched)
 
         # ── MARKET HEALTH ASSESSMENT ───────────────────────────
         health = compute_health_scores(scores)
@@ -7876,7 +8060,6 @@ if page == "1️⃣ Market Health":
         st.divider()
 
         # ── CFIS HUNTER — CAPITAL FLOW PREDICTION ─────────────
-        enriched = fetch_enriched_data(ticker)
         hunter = compute_hunter(info, hist, scores, cm, enriched)
         render_hunter(hunter, ticker, cm)
 
@@ -8241,7 +8424,7 @@ elif page == "3️⃣ Opportunity Engine":
     st.markdown("""
     <div style="margin-bottom:8px">
         <span style="font-size:32px;font-weight:900;color:#ffffff">🎯 Opportunity Engine™</span><br>
-        <span style="font-size:15px;color:#b0bcd4">What should you buy, observe, avoid, or prepare for now?</span>
+        <span style="font-size:15px;color:#b0bcd4">Which signals are strongest, weakest, or worth preparing for now?</span>
     </div>
     """, unsafe_allow_html=True)
 
@@ -8320,7 +8503,7 @@ elif page == "3️⃣ Opportunity Engine":
                 f'<div style="background:#0a2a0a;border:2px solid #4CAF50;border-radius:14px;padding:20px;margin-bottom:16px">'
                 f'<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;margin-bottom:14px">'
                 f'<div>'
-                f'<div style="font-size:12px;color:#8a9bb5;letter-spacing:2px">📈 CALL COMBO — BUY CALLS ON</div>'
+                f'<div style="font-size:12px;color:#8a9bb5;letter-spacing:2px">📈 CALL COMBO — BULLISH OPTIONS SIGNAL</div>'
                 f'<div style="font-size:22px;font-weight:900;color:#4CAF50;margin-top:4px">{combo_tickers}</div>'
                 f'<div style="font-size:11px;color:#8a9bb5;margin-top:4px">Sectors: {sectors_hit}</div>'
                 f'</div>'
@@ -8367,7 +8550,7 @@ elif page == "3️⃣ Opportunity Engine":
                 f'<strong style="color:#4CAF50">Why this combo:</strong> '
                 f'These {len(call_combo)} stocks are selected for the highest combined 90-day upside across diversified sectors. '
                 f'Each has CFIS-X ≥ 45, positive outlook, and bullish Louis signal alignment. '
-                f'Buying calls on this basket spreads risk across {len(set(c["sector"] for c in call_combo))} sectors '
+                f'A bullish call basket scenario spreads risk across {len(set(c["sector"] for c in call_combo))} sectors '
                 f'while targeting a combined avg return of <b>{c90:+.1f}%</b> over 90 days.'
                 f'</div>', unsafe_allow_html=True
             )
@@ -8387,7 +8570,7 @@ elif page == "3️⃣ Opportunity Engine":
                 f'<div style="background:#2a0a0a;border:2px solid #f44336;border-radius:14px;padding:20px;margin-bottom:16px">'
                 f'<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;margin-bottom:14px">'
                 f'<div>'
-                f'<div style="font-size:12px;color:#8a9bb5;letter-spacing:2px">📉 PUT COMBO — BUY PUTS ON</div>'
+                f'<div style="font-size:12px;color:#8a9bb5;letter-spacing:2px">📉 PUT COMBO — BEARISH OPTIONS SIGNAL</div>'
                 f'<div style="font-size:22px;font-weight:900;color:#f44336;margin-top:4px">{put_tickers}</div>'
                 f'<div style="font-size:11px;color:#8a9bb5;margin-top:4px">Sectors: {put_sectors}</div>'
                 f'</div>'
@@ -8432,7 +8615,7 @@ elif page == "3️⃣ Opportunity Engine":
                 f'font-size:12px;color:#c8d4e8;line-height:1.6">'
                 f'<strong style="color:#f44336">Why this combo:</strong> '
                 f'These {len(put_combo)} stocks show the weakest combined outlook — low CFIS-X, poor momentum, '
-                f'or bearish Louis signals. Buying puts on this basket targets a combined avg downside of '
+                f'or bearish Louis signals. A bearish put basket scenario targets a combined avg downside of '
                 f'<b>{p90:+.1f}%</b> over 90 days across {len(set(c["sector"] for c in put_combo))} sectors. '
                 f'Best used as a hedge or directional bearish play.'
                 f'</div>', unsafe_allow_html=True
@@ -8448,6 +8631,16 @@ elif page == "3️⃣ Opportunity Engine":
 
     # ── MACRO EVENT: BOJ / YEN CARRY PUT COMBO ────────────────
     with st.expander("🇯🇵 **Macro Event PUT** — BOJ Rate Hike / Yen Carry Unwind (June 17)", expanded=True):
+        event_date = datetime(2026, 6, 17).date()
+        today = datetime.now().date()
+        event_is_stale = today > event_date
+        if event_is_stale:
+            days_old = (today - event_date).days
+            st.warning(
+                f"This macro-event thesis is stale: the June 17, 2026 event date passed "
+                f"{days_old} day{'s' if days_old != 1 else ''} ago. Re-check current BOJ policy, "
+                "yen movement, and market reaction before using these signals."
+            )
 
         # Reddit macro signals
         with st.spinner("Scanning Reddit for macro event signals…"):
@@ -8455,11 +8648,18 @@ elif page == "3️⃣ Opportunity Engine":
 
         # Macro context header
         boj_total = macro_signals["boj_mentions"] + macro_signals["carry_mentions"]
+        macro_title = "📌 POST-EVENT REVIEW — VALIDATE BEFORE USE" if event_is_stale else "🌍 MACRO THESIS — WHY THIS MATTERS RIGHT NOW"
+        macro_intro = (
+            "<b>June 17, 2026 has passed.</b> Treat this as a historical macro thesis until current BOJ policy, yen movement, "
+            "and post-event market reaction confirm whether the carry-unwind risk is still active. "
+            if event_is_stale else
+            "<b>BOJ is targeting a historic 1% interest rate on June 17.</b> This is the biggest monetary policy shift in Japan in decades. "
+        )
         st.markdown(
             f'<div style="background:#1a0a2a;border:1px solid #7c3aed;border-radius:12px;padding:16px 20px;margin-bottom:16px">'
-            f'<div style="font-size:14px;font-weight:800;color:#a855f7;margin-bottom:8px">🌍 MACRO THESIS — WHY THIS MATTERS RIGHT NOW</div>'
+            f'<div style="font-size:14px;font-weight:800;color:#a855f7;margin-bottom:8px">{macro_title}</div>'
             f'<div style="font-size:13px;color:#e2e8f0;line-height:1.8;margin-bottom:12px">'
-            f'<b>BOJ is targeting a historic 1% interest rate on June 17.</b> This is the biggest monetary policy shift in Japan in decades. '
+            f'{macro_intro}'
             f'When Japan raises rates, the yen strengthens → yen carry trade unwinds → forced selling of US risk assets. '
             f'The August 2024 carry unwind crashed the Nikkei 12% in one day and dragged the S&P down 3-5%. '
             f'Stocks funded by cheap yen leverage — high-beta growth, crypto, pre-revenue speculation — get hit hardest. '
@@ -8505,7 +8705,7 @@ elif page == "3️⃣ Opportunity Engine":
                 f'<div style="background:#2a0a0a;border:2px solid #f44336;border-radius:14px;padding:20px;margin-bottom:12px">'
                 f'<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;margin-bottom:14px">'
                 f'<div>'
-                f'<div style="font-size:12px;color:#f44336;letter-spacing:2px;font-weight:700">🇯🇵 MACRO EVENT PUT — AGGRESSIVE</div>'
+                f'<div style="font-size:12px;color:#f44336;letter-spacing:2px;font-weight:700">🇯🇵 MACRO EVENT PUT — HIGH-RISK SIGNAL</div>'
                 f'<div style="font-size:20px;font-weight:900;color:#f44336;margin-top:4px">{combo_tickers}</div>'
                 f'<div style="font-size:11px;color:#8a9bb5;margin-top:4px">Yen carry vulnerable · High beta · Pre-revenue / Speculative</div>'
                 f'</div>'
@@ -9858,7 +10058,7 @@ elif page == "7️⃣ Options Intelligence by Louis Teo":
             # ── TOP 5 CALL SETUPS ──
             st.markdown("""
             <div style="font-size:18px;font-weight:900;color:#4CAF50;margin-bottom:12px">
-                📈 TOP 5 CALL SETUPS <span style="font-size:12px;color:#8a9bb5;font-weight:400">— Buy calls on strong uptrends with accumulation</span>
+                📈 TOP 5 CALL SETUPS <span style="font-size:12px;color:#8a9bb5;font-weight:400">— Bullish setups from strong uptrends with accumulation</span>
             </div>
             """, unsafe_allow_html=True)
 
@@ -9946,7 +10146,7 @@ elif page == "7️⃣ Options Intelligence by Louis Teo":
             # ── TOP 5 PUT SETUPS ──
             st.markdown("""
             <div style="font-size:18px;font-weight:900;color:#f44336;margin-bottom:12px">
-                📉 TOP 5 PUT SETUPS <span style="font-size:12px;color:#8a9bb5;font-weight:400">— Buy puts on strong downtrends with distribution</span>
+                📉 TOP 5 PUT SETUPS <span style="font-size:12px;color:#8a9bb5;font-weight:400">— Bearish setups from strong downtrends with distribution</span>
             </div>
             """, unsafe_allow_html=True)
 
