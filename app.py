@@ -27,6 +27,7 @@ from services.data_providers import (
 )
 from services.signal_scanner import save_scan_results, load_latest_signals, has_todays_scan
 from services.strategic_flow import compute_strategic_flow
+from services.regeneration_index import compute_regeneration_index
 
 # ─────────────────────────────────────────────────────────────
 # PAGE CONFIG
@@ -7452,6 +7453,7 @@ with st.sidebar:
         "6️⃣ Hunter Command by Louis Teo",
         "7️⃣ Options Intelligence by Louis Teo",
         "8️⃣ CFIS Frontier by Louis Teo",
+        "🌳 Louis Regeneration Index™",
     ], label_visibility="collapsed")
     st.divider()
     st.caption("Data: Yahoo Finance · Cache: 5 min")
@@ -10440,3 +10442,229 @@ elif page == "8️⃣ CFIS Frontier by Louis Teo":
             """, unsafe_allow_html=True)
         else:
             st.warning("No frontier data available. Try again in a moment.")
+
+# ═══════════════════════════════════════════════════════════════
+# SIDEBAR 9 — LOUIS REGENERATION INDEX™
+# "Leave Things Better Than You Found Them."
+# Symbol: The Banyan Tree™
+#
+# THIS IS A REFLECTION LAYER ONLY.
+# It does NOT participate in trading decisions.
+# It does NOT override any existing CFIS signal, score, or weight.
+# ═══════════════════════════════════════════════════════════════
+
+elif page == "🌳 Louis Regeneration Index™":
+    st.markdown("""
+    <div style="text-align:center;padding:30px 0 10px 0">
+        <div style="font-size:60px">🌳</div>
+        <div style="font-size:28px;font-weight:900;color:#ffffff;letter-spacing:3px;
+                    font-family:'Inter',sans-serif;margin-top:8px">
+            LOUIS REGENERATION INDEX™</div>
+        <div style="font-size:13px;color:#8bc34a;letter-spacing:3px;margin-top:6px;font-weight:700">
+            THE BANYAN TREE</div>
+        <div style="font-size:14px;color:#c9d1d9;margin-top:12px;font-style:italic;max-width:600px;margin-left:auto;margin-right:auto;line-height:1.8">
+            "Leave Things Better Than You Found Them."</div>
+        <div style="width:80px;height:2px;background:linear-gradient(90deg,#4CAF50,#8BC34A,#4CAF50);
+                    margin:16px auto"></div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Philosophy box
+    st.markdown("""
+    <div style="background:linear-gradient(135deg,#0a1a0a,#1a2a1a);border:1px solid #2E7D32;
+                border-radius:14px;padding:24px;margin:10px 0 20px 0">
+        <div style="font-size:13px;font-weight:900;color:#4CAF50;letter-spacing:3px;text-align:center;margin-bottom:16px">
+            THE FOUNDER'S COMPASS</div>
+        <div style="font-size:12px;color:#a5d6a7;line-height:2.2;text-align:center">
+            Leadership is not about power. It is about leaving people, businesses, communities,<br>
+            systems and opportunities better than we found them.<br><br>
+            <strong style="color:#66BB6A">Protect capital first.</strong> ·
+            <strong style="color:#66BB6A">Seek root causes.</strong> ·
+            <strong style="color:#66BB6A">Think in systems.</strong><br>
+            <strong style="color:#66BB6A">Observe before acting.</strong> ·
+            <strong style="color:#66BB6A">Capital follows value.</strong> ·
+            <strong style="color:#66BB6A">Build legacy.</strong><br>
+            <strong style="color:#8BC34A">Prefer regeneration over extraction.</strong>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Disclaimer
+    st.markdown("""
+    <div style="background:#1a1a0a;border:1px solid #5D4037;border-radius:10px;padding:14px;margin-bottom:20px">
+        <div style="font-size:11px;color:#BCAAA4;text-align:center;line-height:1.8">
+            ⚠️ <strong style="color:#FF9800">THIS IS A REFLECTION LAYER — NOT A TRADING ENGINE.</strong><br>
+            The Regeneration Index does not override buy/sell signals, conviction scores, position sizes, or portfolio weights.<br>
+            CFIS Core Engines provide decisions. This sidebar provides perspective.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Ticker input
+    regen_col1, regen_col2 = st.columns([3, 1])
+    with regen_col1:
+        regen_ticker = st.text_input("Enter Ticker", value="", placeholder="e.g. NVDA, LLY, ETN", key="regen_ticker_input").strip().upper()
+    with regen_col2:
+        regen_go = st.button("🌳 Evaluate", key="regen_go_btn", type="primary", use_container_width=True)
+
+    if regen_ticker and regen_go:
+        with st.spinner(f"Evaluating {regen_ticker} through the Regeneration lens…"):
+            try:
+                tk = yf.Ticker(regen_ticker)
+                info = tk.info or {}
+                hist = tk.history(period="1y")
+                if not info or not info.get("shortName"):
+                    st.error(f"Could not load data for {regen_ticker}.")
+                    st.stop()
+
+                ri = compute_regeneration_index(info, hist)
+                name = (info.get("shortName") or info.get("longName", regen_ticker))[:30]
+                price = safe(info, "currentPrice", "regularMarketPrice", default=0)
+                mc = safe(info, "marketCap", default=0)
+                mc_str = f"${mc/1e9:.1f}B" if mc >= 1e9 else (f"${mc/1e6:.0f}M" if mc >= 1e6 else "N/A")
+                sector = info.get("sector", "")
+                industry = info.get("industry", "")
+
+                # Header
+                st.markdown(f"""
+                <div style="background:linear-gradient(135deg,#0d1117,#1a2a1a);border:2px solid {ri['action_color']};
+                            border-radius:16px;padding:24px;margin:16px 0;text-align:center">
+                    <div style="font-size:11px;color:#8b949e;letter-spacing:3px;font-weight:700">REGENERATION ANALYSIS</div>
+                    <div style="font-size:28px;font-weight:900;color:#ffffff;margin-top:8px">{regen_ticker} — {name}</div>
+                    <div style="font-size:13px;color:#8b949e;margin-top:4px">{sector} · {industry} · {mc_str}</div>
+                    <div style="margin-top:16px">
+                        <span style="font-size:48px;font-weight:900;color:{ri['action_color']}">{ri['composite']}</span>
+                        <span style="font-size:14px;color:#8b949e;margin-left:4px">/ 100</span>
+                    </div>
+                    <div style="font-size:16px;font-weight:700;color:{ri['action_color']};margin-top:8px">
+                        {ri['action']}</div>
+                    <div style="font-size:12px;color:#c9d1d9;margin-top:4px">{ri['action_desc']}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # Score breakdown
+                modules = [
+                    ("🌱 Regeneration Score", ri["regeneration"], "20%", "Does this company improve the future?"),
+                    ("🏛️ Legacy Score", ri["legacy"], "20%", "Will this company still matter in 10 years?"),
+                    ("🤝 Stewardship Score", ri["stewardship"], "15%", "Would I trust management with family wealth?"),
+                    ("🔬 First Principles", ri["first_principles"], "15%", "Is the thesis supported by root causes?"),
+                    ("🏘️ Community Impact", ri["community_impact"], "10%", "Does this company strengthen society?"),
+                    (f"👨‍👩‍👧‍👦 Family Wealth Test {ri['family_wealth_label']}", ri["family_wealth"], "10%", "Would 50% of family wealth go here for 10 years?"),
+                    ("🌳 Banyan Tree Index", ri["banyan_tree"], "10%", "Deep roots, long life, generational value"),
+                ]
+
+                st.markdown("""
+                <div style="margin-top:20px;margin-bottom:8px">
+                    <div style="font-size:14px;font-weight:900;color:#4CAF50;letter-spacing:2px;text-align:center">
+                        7 REGENERATION MODULES</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                for label, score_val, weight, question in modules:
+                    if score_val >= 75:
+                        bar_color = "#4CAF50"
+                    elif score_val >= 60:
+                        bar_color = "#8BC34A"
+                    elif score_val >= 45:
+                        bar_color = "#FFC107"
+                    elif score_val >= 30:
+                        bar_color = "#FF9800"
+                    else:
+                        bar_color = "#f44336"
+
+                    st.markdown(f"""
+                    <div style="background:#0d1117;border:1px solid #21262d;border-radius:10px;padding:14px 16px;margin:6px 0">
+                        <div style="display:flex;justify-content:space-between;align-items:center">
+                            <div>
+                                <span style="font-size:13px;font-weight:700;color:#e6edf3">{label}</span>
+                                <span style="font-size:10px;color:#8b949e;margin-left:8px">({weight})</span>
+                            </div>
+                            <span style="font-size:20px;font-weight:900;color:{bar_color}">{score_val}</span>
+                        </div>
+                        <div style="font-size:11px;color:#8b949e;margin-top:4px;font-style:italic">{question}</div>
+                        <div style="background:#21262d;border-radius:4px;height:6px;margin-top:8px;overflow:hidden">
+                            <div style="background:{bar_color};height:100%;width:{score_val}%;border-radius:4px;
+                                        transition:width 0.5s ease"></div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                # Regeneration Action Signal explanation
+                st.markdown(f"""
+                <div style="background:linear-gradient(135deg,#0a1a0a,#1a2a1a);border:1px solid #2E7D32;
+                            border-radius:14px;padding:20px;margin:20px 0">
+                    <div style="font-size:13px;font-weight:900;color:#4CAF50;letter-spacing:2px;text-align:center;margin-bottom:14px">
+                        REGENERATION ACTION SIGNAL™</div>
+                    <div style="font-size:12px;color:#a5d6a7;line-height:2.4;text-align:center">
+                        <strong style="color:#00C853">🌳 LEAD (85+)</strong> — Exceptional long-term conviction<br>
+                        <strong style="color:#4CAF50">🏗️ BUILD (75-84)</strong> — Strong long-term conviction<br>
+                        <strong style="color:#8BC34A">📈 ACCUMULATE (65-74)</strong> — Gradual positioning<br>
+                        <strong style="color:#FFC107">📖 LEARN (55-64)</strong> — Study further<br>
+                        <strong style="color:#FF9800">👁️ OBSERVE (45-54)</strong> — Insufficient clarity<br>
+                        <strong style="color:#FF5722">🌾 HARVEST (35-44)</strong> — Take gains responsibly<br>
+                        <strong style="color:#f44336">🛡️ PROTECT (0-34)</strong> — Preserve capital
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # Banyan Tree philosophy
+                st.markdown("""
+                <div style="background:#0d1117;border:1px solid #21262d;border-radius:14px;padding:20px;margin:20px 0">
+                    <div style="text-align:center;font-size:36px;margin-bottom:12px">🌳</div>
+                    <div style="font-size:13px;font-weight:900;color:#8BC34A;letter-spacing:2px;text-align:center;margin-bottom:14px">
+                        THE BANYAN TREE™</div>
+                    <div style="font-size:12px;color:#c9d1d9;line-height:2.2;text-align:center">
+                        <strong style="color:#66BB6A">Deep Roots</strong> — Strong foundation, enduring principles<br>
+                        <strong style="color:#66BB6A">Long Life</strong> — Built to last generations, not quarters<br>
+                        <strong style="color:#66BB6A">Protection</strong> — Shelters stakeholders through storms<br>
+                        <strong style="color:#66BB6A">Growth</strong> — Expands steadily, never recklessly<br>
+                        <strong style="color:#66BB6A">Generational Value</strong> — Compounds wealth across time
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            except Exception as e:
+                st.error(f"Error evaluating {regen_ticker}: {e}")
+
+    elif not regen_ticker:
+        # Landing state
+        st.markdown("""
+        <div style="background:#0d1117;border:1px solid #21262d;border-radius:14px;padding:30px;margin:20px 0;text-align:center">
+            <div style="font-size:36px;margin-bottom:12px">🌳</div>
+            <div style="font-size:14px;color:#c9d1d9;line-height:2.0;max-width:550px;margin:0 auto">
+                Enter a ticker above to evaluate it through the <strong style="color:#4CAF50">Regeneration lens</strong>.<br><br>
+                The Louis Regeneration Index™ evaluates companies across 7 dimensions of<br>
+                long-term stewardship, regeneration, and legacy value.<br><br>
+                <strong style="color:#8BC34A">This is a philosophical compass — not a trading signal.</strong><br>
+                CFIS Core Engines make decisions. This sidebar provides perspective.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Module overview
+        st.markdown("""
+        <div style="background:linear-gradient(135deg,#0a1a0a,#1a2a1a);border:1px solid #2E7D32;
+                    border-radius:14px;padding:24px;margin:10px 0">
+            <div style="font-size:13px;font-weight:900;color:#4CAF50;letter-spacing:2px;text-align:center;margin-bottom:16px">
+                7 REGENERATION MODULES</div>
+            <div style="font-size:12px;color:#a5d6a7;line-height:2.6">
+                <strong style="color:#66BB6A">1. Regeneration Score (20%)</strong> — Does this company improve the future?<br>
+                <strong style="color:#66BB6A">2. Legacy Score (20%)</strong> — Will this company still matter in 10 years?<br>
+                <strong style="color:#66BB6A">3. Stewardship Score (15%)</strong> — Would I trust management with my family's wealth?<br>
+                <strong style="color:#66BB6A">4. First Principles (15%)</strong> — Is the thesis supported by root causes?<br>
+                <strong style="color:#66BB6A">5. Community Impact (10%)</strong> — Does this company strengthen society?<br>
+                <strong style="color:#66BB6A">6. Family Wealth Test (10%)</strong> — Would 50% of family wealth go here for 10 years?<br>
+                <strong style="color:#66BB6A">7. Banyan Tree Index (10%)</strong> — Deep roots, long life, generational value
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("""
+        <div style="text-align:center;margin-top:20px">
+            <div style="font-size:11px;color:#5a6a5a;line-height:1.8">
+                The purpose of wealth is not accumulation. The purpose of wealth is regeneration.<br>
+                The purpose of investing is not prediction. The purpose of investing is intelligent capital allocation.<br>
+                The purpose of capital allocation is creating long-term value.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
