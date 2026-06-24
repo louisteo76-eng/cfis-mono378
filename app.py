@@ -574,6 +574,7 @@ def get_edgar_metric(facts, concept, taxonomy="us-gaap"):
         return None
 
 @st.cache_data(ttl=600)
+@st.cache_data(ttl=600, show_spinner=False)
 def fetch_enriched_data(ticker):
     enriched = {
         "inst_pct": None,
@@ -6086,13 +6087,13 @@ FULL_UNIVERSE = [
     "RGTI","QUBT",
     # ── Underdogs & Below Radar — Small/Mid Cap with Potential ──
     "AEHR","GSAT","IREN","CORZ","WULF","BTDR","HUT","CIFR",  # AI/Crypto infra
-    "ACHR","JOBY","LILM","EVTL",  # eVTOL / Air mobility
-    "PSNY","RIVN","LCID","GOEV",  # EV underdogs
+    "ACHR","JOBY",  # eVTOL / Air mobility
+    "PSNY","RIVN","LCID",  # EV underdogs
     "DNA","ARKG","BEAM","NTLA","EDIT",  # Genomics / Gene editing
     "SOFI","UPST","AFRM","NU",  # Fintech underdogs
     "RBOT","SERV","ORGN",  # Robotics / DeepTech
     "IQ","FUTU","TIGR",  # China tech underdogs
-    "U","RBLX","MTTR",  # Metaverse / Gaming
+    "U","RBLX",  # Metaverse / Gaming
     "SOUN","BBAI","AI",  # AI small-caps
     "APLD","CLSK",  # Data center / Mining
 ]
@@ -6394,23 +6395,28 @@ def scan_opportunities(universe_tuple):
     if not fast_rows:
         raise RuntimeError("No opportunity data")
 
-    # Phase 2: Enrich only top 30 candidates with multi-source APIs
+    # Phase 2: Enrich only top 10 candidates with multi-source APIs
     fast_rows.sort(key=lambda x: x["conviction"], reverse=True)
-    top_tickers = {r["ticker"] for r in fast_rows[:30]}
+    top_tickers = {r["ticker"] for r in fast_rows[:10]}
 
     rows = []
+    enrich_failed = False
     for r in fast_rows:
         t = r["ticker"]
-        if t in top_tickers and t in prefetched:
+        if t in top_tickers and t in prefetched and not enrich_failed:
             try:
                 info, hist = prefetched[t]
                 enriched = fetch_enriched_data(t)
+                if enriched.get("data_quality", 0) == 0:
+                    enrich_failed = True
+                    rows.append(r)
+                    continue
                 enriched_row = _build_row(t, info, hist, enriched)
                 if enriched_row:
                     rows.append(enriched_row)
                     continue
             except Exception:
-                pass
+                enrich_failed = True
         rows.append(r)
 
     save_scan_results(rows)
