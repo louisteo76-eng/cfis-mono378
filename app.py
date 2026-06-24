@@ -1192,6 +1192,7 @@ def fetch(ticker):
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=86400, show_spinner=False)
 def get_search_universe_options():
     """Return ticker/name pairs for search autocomplete from Supabase/FMP.
 
