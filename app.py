@@ -6873,6 +6873,7 @@ def _build_row(t, info, hist, enriched=None):
         strat = {"score": 0, "label": "", "dominant_force": "", "capital_flow": "", "confidence": 0, "themes": []}
 
     narr = hunter["narrative"]
+    ba = breakout_acceleration_alpha(info, hist)
     return {
         "ticker": t, "name": name, "price": price,
         "theme": primary_theme, "theme_icon": td.get("icon", "📊"),
@@ -6884,6 +6885,7 @@ def _build_row(t, info, hist, enriched=None):
         "bottleneck": cm["scores"]["bottleneck"],
         "cm_score": cm["scores"]["overall"],
         "narrative": narr["score"] if isinstance(narr, dict) else narr,
+        "breakout_alpha": ba,
         "mom_15": mom_15, "mom_5": mom_5,
         "expected_ret": proj["30d"],
         "proj_15d": proj["15d"],
@@ -7047,15 +7049,15 @@ def scan_validation_periods(universe_tuple, start_date_str="2026-03-01"):
 
 def filter_opportunities(rows, horizon):
     if horizon == "15d":
-        scored = sorted(rows, key=lambda r: r["mom_15"] * 0.35 + r["conviction"] * 0.35 + r["narrative"] * 0.30, reverse=True)
+        scored = sorted(rows, key=lambda r: r["mom_15"] * 0.30 + r["conviction"] * 0.30 + r["narrative"] * 0.20 + r.get("breakout_alpha", 0) * 2.0, reverse=True)
     elif horizon == "30d":
-        scored = sorted(rows, key=lambda r: r["conviction"] * 0.40 + r["mom_15"] * 0.25 + r["cm_score"] * 0.35, reverse=True)
+        scored = sorted(rows, key=lambda r: r["conviction"] * 0.35 + r["mom_15"] * 0.20 + r["cm_score"] * 0.30 + r.get("breakout_alpha", 0) * 1.5, reverse=True)
     elif horizon == "90d":
         scored = sorted(rows, key=lambda r: r["conviction"] * 0.40 + r["cm_score"] * 0.35 + r["quality"] * 0.25, reverse=True)
     elif horizon == "legacy":
         scored = sorted(rows, key=lambda r: r["conviction"] * 0.30 + r["bottleneck"] * 0.25 + r["quality"] * 0.25 + r["risk"] * 0.20, reverse=True)
     else:
-        scored = sorted(rows, key=lambda r: r["conviction"], reverse=True)
+        scored = sorted(rows, key=lambda r: r["conviction"] + r.get("breakout_alpha", 0) * 1.0, reverse=True)
     return scored
 
 
@@ -7081,9 +7083,21 @@ def render_opportunity_table(rows, count=12, show_thesis=True):
 
         mom_badge = ""
         if r["mom_15"] < -10:
-            mom_badge = '<div style="font-size:8px;font-weight:700;color:#000;background:#f44336;border-radius:6px;padding:1px 6px;margin-top:2px">⚠️ FALLING</div>'
+            mom_badge = '<div style="font-size:8px;font-weight:700;color:#000;background:#f44336;border-radius:6px;padding:1px 6px;margin-top:2px">FALLING</div>'
         elif r["mom_15"] < -5:
-            mom_badge = '<div style="font-size:8px;font-weight:700;color:#000;background:#FFC107;border-radius:6px;padding:1px 6px;margin-top:2px">⚠️ WEAK</div>'
+            mom_badge = '<div style="font-size:8px;font-weight:700;color:#000;background:#FFC107;border-radius:6px;padding:1px 6px;margin-top:2px">WEAK</div>'
+
+        ba = r.get("breakout_alpha", 0)
+        if ba >= 8:
+            ba_c, ba_label = "#00E676", "BREAKOUT"
+        elif ba >= 4:
+            ba_c, ba_label = "#4CAF50", "STRONG"
+        elif ba >= 1:
+            ba_c, ba_label = "#8BC34A", "BUILDING"
+        elif ba <= -3:
+            ba_c, ba_label = "#f44336", "DRAG"
+        else:
+            ba_c, ba_label = "#555", "—"
 
         html = (
             '<div style="background:#161b27;border-radius:10px;padding:12px 16px;margin-bottom:6px;'
@@ -7095,6 +7109,10 @@ def render_opportunity_table(rows, count=12, show_thesis=True):
             '<div style="min-width:65px;text-align:center">'
             '<div style="font-size:20px;font-weight:900;color:' + conv_c + '">' + f"{r['conviction']:.0f}" + '</div>'
             '<div style="font-size:9px;color:#8a9bb5">CONVICTION</div>'
+            '</div>'
+            '<div style="min-width:50px;text-align:center">'
+            '<div style="font-size:14px;font-weight:800;color:' + ba_c + '">' + (f"+{ba}" if ba > 0 else str(ba)) + '</div>'
+            '<div style="font-size:8px;color:' + ba_c + ';font-weight:700">' + ba_label + '</div>'
             '</div>'
             '<div style="min-width:65px;text-align:center">'
             '<div style="font-size:14px;font-weight:800;color:' + sig_c + '">' + r['signal'] + '</div>'
