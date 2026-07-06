@@ -14,6 +14,7 @@ import xml.etree.ElementTree as ET
 import re
 import json
 import time as _time
+from textwrap import dedent
 from collections import Counter
 from urllib.parse import quote as url_quote
 
@@ -32,14 +33,14 @@ from services.regeneration_index import compute_regeneration_index
 # ─────────────────────────────────────────────────────────────
 # PAGE CONFIG
 # ─────────────────────────────────────────────────────────────
-# Clear stale cache on first load of each session
+# Keep cached market data between browser refreshes. Clearing this automatically
+# makes every new session refetch large ticker scans and can overload Streamlit.
 if "cache_cleared" not in st.session_state:
-    st.cache_data.clear()
     st.session_state["cache_cleared"] = True
 
 st.set_page_config(
     page_title="CFIS-X by mono378",
-    page_icon="📈",
+    page_icon="assets/cfis_signal_core.svg",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -48,6 +49,25 @@ st.set_page_config(
 # LOGIN GATE
 # ─────────────────────────────────────────────────────────────
 ACCESS_PASSWORD = "mono378"
+
+def cfis_signal_icon(size=84):
+    """Return the CFIS signal-core mark as inline SVG."""
+    return dedent(f"""
+    <svg width="{size}" height="{size}" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg"
+         style="display:block;margin:0 auto 18px auto;filter:drop-shadow(0 0 22px rgba(217,21,43,0.24));">
+      <rect width="512" height="512" rx="104" fill="#080B12"/>
+      <circle cx="256" cy="256" r="188" fill="#D9152B"/>
+      <circle cx="256" cy="256" r="126" fill="#F7F8FA"/>
+      <circle cx="256" cy="256" r="70" fill="#05070B"/>
+      <circle cx="256" cy="256" r="13" fill="#20D47B"/>
+      <circle cx="256" cy="256" r="210" stroke="#2A3344" stroke-width="4"/>
+      <path d="M256 54V102" stroke="#2A3344" stroke-width="10" stroke-linecap="round"/>
+      <path d="M256 410V458" stroke="#2A3344" stroke-width="10" stroke-linecap="round"/>
+      <path d="M54 256H102" stroke="#2A3344" stroke-width="10" stroke-linecap="round"/>
+      <path d="M410 256H458" stroke="#2A3344" stroke-width="10" stroke-linecap="round"/>
+      <circle cx="256" cy="256" r="13" stroke="#9CFFD0" stroke-width="5" opacity="0.65"/>
+    </svg>
+    """).strip()
 
 def render_login():
     """Render the login page with Wall Street aesthetic."""
@@ -62,8 +82,9 @@ def render_login():
     # Centered login card
     col_l, col_c, col_r = st.columns([1, 2, 1])
     with col_c:
-        st.markdown("""
+        st.markdown(dedent(f"""
         <div style="text-align:center;margin-top:12vh">
+            {cfis_signal_icon(92)}
             <div style="font-size:48px;font-weight:900;color:#ffffff;letter-spacing:6px;
                         font-family:'SF Mono','Fira Code',monospace">CFIS-X</div>
             <div style="font-size:11px;color:#4a5568;letter-spacing:4px;margin-top:4px">
@@ -73,7 +94,7 @@ def render_login():
             <div style="font-size:13px;color:#6a7a9a;margin-top:8px">
                 18-Category Composite · Louis Intuition Engine · Reddit Intelligence</div>
         </div>
-        """, unsafe_allow_html=True)
+        """).strip(), unsafe_allow_html=True)
 
         st.markdown("<div style='height:40px'></div>", unsafe_allow_html=True)
 
@@ -573,7 +594,6 @@ def get_edgar_metric(facts, concept, taxonomy="us-gaap"):
     except Exception:
         return None
 
-@st.cache_data(ttl=600)
 @st.cache_data(ttl=600, show_spinner=False)
 def fetch_enriched_data(ticker):
     enriched = {
@@ -1140,8 +1160,22 @@ def render_financial_metric_grid(metrics):
 @st.cache_data(ttl=300)
 def fetch(ticker):
     t = yf.Ticker(ticker)
-    info = t.info
-    hist = t.history(period="1y")
+    info = {}
+    try:
+        fast = t.fast_info or {}
+        info.update(dict(fast))
+    except Exception:
+        pass
+    try:
+        hist = t.history(period="1y")
+    except Exception:
+        hist = pd.DataFrame()
+    try:
+        detailed = t.info or {}
+        if detailed:
+            info.update(detailed)
+    except Exception:
+        pass
     try:
         balance_sheet = t.balance_sheet
         if balance_sheet is None or balance_sheet.empty:
@@ -1180,19 +1214,13 @@ def fetch(ticker):
         maj = None
     try:
         dates = list(t.options)
-        if dates:
-            chain = t.option_chain(dates[0])
-            opts_calls = chain.calls.reset_index(drop=True)
-            opts_puts  = chain.puts.reset_index(drop=True)
-        else:
-            opts_calls = opts_puts = None
+        opts_calls = opts_puts = None
     except:
         opts_calls = opts_puts = None
         dates = []
     return info, hist, inst, maj, opts_calls, opts_puts, dates
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
 @st.cache_data(ttl=86400, show_spinner=False)
 def get_search_universe_options():
     """Return ticker/name pairs for search autocomplete from Supabase/FMP.
@@ -1639,21 +1667,272 @@ WEIGHTS = {
     "Market Regime Intelligence":   0.05,
 }
 
-def cfis_composite(scores):
-    return clamp(sum(scores[k] * WEIGHTS[k] for k in CATEGORIES))
+def _pct_momentum(hist, days):
+    """Return simple price momentum as a percent. Missing data is neutral."""
+    try:
+        if hist is None or hist.empty or len(hist) < days:
+            return 0
+        close = hist["Close"]
+        start = float(close.iloc[-days])
+        end = float(close.iloc[-1])
+        if start <= 0 or pd.isna(start) or pd.isna(end):
+            return 0
+        return (end - start) / start * 100
+    except Exception:
+        return 0
+
+
+def mvp_opportunity_alpha(info, hist):
+    """Opportunity adjustment for Lite mode.
+
+    Rewards confirmed growth, trend, upside, and balance-sheet survival.
+    Missing optional data stays neutral; only observed risks subtract.
+    """
+    alpha = 0
+
+    rg = safe(info, "revenueGrowth", default=None)
+    if rg is not None:
+        if rg > 0.30:
+            alpha += 8
+        elif rg > 0.20:
+            alpha += 6
+        elif rg > 0.10:
+            alpha += 4
+        elif rg > 0.03:
+            alpha += 2
+        elif rg < -0.12:
+            alpha -= 6
+        elif rg < -0.05:
+            alpha -= 3
+
+    eg = safe(info, "earningsGrowth", default=None)
+    if eg is not None:
+        if eg > 0.25:
+            alpha += 4
+        elif eg > 0.10:
+            alpha += 2
+        elif eg < -0.25:
+            alpha -= 3
+
+    mom_30 = _pct_momentum(hist, 30)
+    mom_90 = _pct_momentum(hist, 90)
+    if mom_30 > 12 and mom_90 > 0:
+        alpha += 7
+    elif mom_30 > 6:
+        alpha += 4
+    elif mom_30 > 2:
+        alpha += 2
+    elif mom_30 < -18:
+        alpha -= 6
+    elif mom_30 < -8:
+        alpha -= 3
+
+    if mom_90 > 25:
+        alpha += 5
+    elif mom_90 > 10:
+        alpha += 3
+    elif mom_90 < -25:
+        alpha -= 5
+
+    cash = safe(info, "totalCash", default=None)
+    debt = safe(info, "totalDebt", default=None)
+    if cash is not None and debt is not None:
+        if debt <= 0 or cash >= debt:
+            alpha += 4
+        elif debt > cash * 3:
+            alpha -= 5
+        elif debt > cash * 1.5:
+            alpha -= 2
+
+    current = safe(info, "currentPrice", "regularMarketPrice", default=None)
+    target = safe(info, "targetMeanPrice", default=None)
+    if current and target and current > 0:
+        upside = (target - current) / current
+        if upside > 0.35:
+            alpha += 6
+        elif upside > 0.20:
+            alpha += 4
+        elif upside > 0.08:
+            alpha += 2
+        elif upside < -0.20:
+            alpha -= 5
+
+    return max(-12, min(18, round(alpha)))
+
+
+# ─────────────────────────────────────────────────────────────
+# BREAKOUT ACCELERATION OVERLAY
+# Pure addition — does NOT modify any of the 18 sacred scores.
+# Detects aggressive momentum signals the 18 components miss:
+#   1. Volume spike (1-day / 3-day vs 20-day avg)
+#   2. Relative strength vs SPY
+#   3. Volatility squeeze (Bollinger Band compression)
+#   4. Pre-earnings drift
+#   5. Momentum persistence (RSI regime)
+#   6. Margin inflection (turning profitable)
+# ─────────────────────────────────────────────────────────────
+
+@st.cache_data(ttl=600)
+def _get_spy_momentum():
+    """Cache SPY momentum for relative strength comparison."""
+    try:
+        spy = yf.Ticker("SPY").history(period="6mo")
+        if spy.empty or len(spy) < 30:
+            return {"mom_10": 0, "mom_20": 0, "mom_60": 0}
+        c = spy["Close"]
+        return {
+            "mom_10": (float(c.iloc[-1]) - float(c.iloc[-10])) / float(c.iloc[-10]) * 100 if len(spy) >= 10 else 0,
+            "mom_20": (float(c.iloc[-1]) - float(c.iloc[-20])) / float(c.iloc[-20]) * 100 if len(spy) >= 20 else 0,
+            "mom_60": (float(c.iloc[-1]) - float(c.iloc[-60])) / float(c.iloc[-60]) * 100 if len(spy) >= 60 else 0,
+        }
+    except Exception:
+        return {"mom_10": 0, "mom_20": 0, "mom_60": 0}
+
+
+def breakout_acceleration_alpha(info, hist):
+    """Aggressive overlay that rewards breakout characteristics.
+
+    Adds up to +22 / subtracts up to -6 on top of existing CFIS composite.
+    Designed to catch surprise jumps the 18 static components miss.
+    """
+    if hist is None or hist.empty or len(hist) < 20:
+        return 0
+    alpha = 0
+    close = hist["Close"]
+    volume = hist["Volume"]
+    price = float(close.iloc[-1])
+
+    # ── 1. VOLUME SPIKE — 1-day and 3-day vs 20-day average ──
+    vol_20_avg = float(volume.iloc[-20:].mean()) if len(volume) >= 20 else 0
+    if vol_20_avg > 0:
+        vol_1d = float(volume.iloc[-1])
+        vol_3d = float(volume.iloc[-3:].mean()) if len(volume) >= 3 else vol_1d
+        spike_1d = vol_1d / vol_20_avg
+        spike_3d = vol_3d / vol_20_avg
+        if spike_1d >= 3.0:
+            alpha += 6
+        elif spike_3d >= 2.0:
+            alpha += 4
+        elif spike_3d >= 1.5:
+            alpha += 2
+
+    # ── 2. RELATIVE STRENGTH vs SPY ──
+    spy_mom = _get_spy_momentum()
+    if len(hist) >= 20:
+        stock_mom_20 = (price - float(close.iloc[-20])) / float(close.iloc[-20]) * 100
+        rs_20 = stock_mom_20 - spy_mom.get("mom_20", 0)
+        if rs_20 > 15:
+            alpha += 5
+        elif rs_20 > 8:
+            alpha += 3
+        elif rs_20 > 3:
+            alpha += 1
+        elif rs_20 < -15:
+            alpha -= 3
+
+    if len(hist) >= 60:
+        stock_mom_60 = (price - float(close.iloc[-60])) / float(close.iloc[-60]) * 100
+        rs_60 = stock_mom_60 - spy_mom.get("mom_60", 0)
+        if rs_60 > 20:
+            alpha += 3
+        elif rs_60 < -20:
+            alpha -= 3
+
+    # ── 3. VOLATILITY SQUEEZE (Bollinger Band compression) ──
+    if len(hist) >= 30:
+        sma_20 = close.rolling(20).mean()
+        std_20 = close.rolling(20).std()
+        bb_width = ((sma_20 + 2 * std_20) - (sma_20 - 2 * std_20)) / sma_20
+        bb_width = bb_width.dropna()
+        if len(bb_width) >= 10:
+            current_bbw = float(bb_width.iloc[-1])
+            min_bbw_20 = float(bb_width.iloc[-20:].min()) if len(bb_width) >= 20 else current_bbw
+            if current_bbw <= min_bbw_20 * 1.05 and vol_20_avg > 0 and spike_3d >= 1.2:
+                alpha += 4
+            elif current_bbw <= min_bbw_20 * 1.10:
+                alpha += 2
+
+    # ── 4. MOMENTUM PERSISTENCE (RSI regime, not single reading) ──
+    if len(hist) >= 20:
+        delta = close.diff()
+        gain = delta.clip(lower=0).rolling(14).mean()
+        loss = (-delta.clip(upper=0)).rolling(14).mean()
+        rs = gain / loss.replace(0, float('nan'))
+        rsi = 100 - (100 / (1 + rs))
+        rsi = rsi.dropna()
+        if len(rsi) >= 10:
+            rsi_above_60 = sum(1 for v in rsi.iloc[-10:] if float(v) > 60)
+            current_rsi = float(rsi.iloc[-1])
+            if rsi_above_60 >= 8 and current_rsi > 55:
+                alpha += 3
+            if current_rsi > 80 and vol_20_avg > 0 and spike_3d < 0.8:
+                alpha -= 2
+
+    # ── 5. MARGIN INFLECTION (turning profitable = surprise catalyst) ──
+    om = safe(info, "operatingMargins", default=None)
+    rg = safe(info, "revenueGrowth", default=0) or 0
+    eg = safe(info, "earningsGrowth", default=0) or 0
+    if om is not None:
+        if 0 < om < 0.10 and eg > 0.30:
+            alpha += 3
+        if om < 0 and rg > 0.20 and eg > 0:
+            alpha += 4
+
+    # ── 6. EARNINGS PROXIMITY + DRIFT ──
+    try:
+        ec = info.get("earningsTimestamp") or info.get("mostRecentQuarter")
+        if ec and len(hist) >= 10:
+            mom_10 = (price - float(close.iloc[-10])) / float(close.iloc[-10]) * 100
+            if mom_10 > 3 and vol_20_avg > 0 and spike_3d >= 1.3:
+                alpha += 3
+    except Exception:
+        pass
+
+    return max(-6, min(22, round(alpha)))
+
+
+def cfis_composite(scores, info=None, hist=None):
+    base = sum(scores[k] * WEIGHTS[k] for k in CATEGORIES)
+    if info is not None and hist is not None:
+        base += mvp_opportunity_alpha(info, hist)
+        base += breakout_acceleration_alpha(info, hist)
+    return clamp(base)
 
 def opportunity_score(cfis, info, hist):
-    s = cfis * 0.55
+    s = cfis * 0.50
     current = safe(info, "currentPrice", "regularMarketPrice", default=0)
     target = safe(info, "targetMeanPrice", default=0)
     if current and target:
         upside = (target - current) / current
-        s += clamp(upside * 55, -12, 22)
+        s += clamp(upside * 70, -12, 28)
+    rg = safe(info, "revenueGrowth", default=None)
+    if rg is not None:
+        if rg > 0.25:
+            s += 12
+        elif rg > 0.15:
+            s += 8
+        elif rg > 0.08:
+            s += 5
+        elif rg < -0.10:
+            s -= 8
+    mom_30 = _pct_momentum(hist, 30)
+    mom_90 = _pct_momentum(hist, 90)
+    if mom_30 > 8 and mom_90 > 0:
+        s += 12
+    elif mom_30 > 3:
+        s += 7
+    elif mom_30 < -12:
+        s -= 8
     if len(hist) > 50:
         close = hist["Close"]
         hi = close.max(); lo = close.min()
         pos = (close.iloc[-1] - lo) / (hi - lo + 0.001)
-        s += (1 - pos) * 18
+        # Buying near the lows is useful, but avoid over-rewarding weak charts.
+        if mom_30 >= 0:
+            s += (1 - pos) * 10
+        elif pos < 0.25:
+            s += 3
+    s += breakout_acceleration_alpha(info, hist)
     return clamp(s)
 
 
@@ -3726,7 +4005,7 @@ def score_narrative(info, hist, cm, enriched=None):
         s += 14
         reasons.append(f"Single-theme: {themes_hit[0][0]}")
     else:
-        reasons.append("No strong future theme alignment — this is an old-economy stock")
+        reasons.append("No strong future theme detected from available text — treated as neutral, not bearish")
 
     # Theme capital flow acceleration from CM engine
     theme_data = cm.get("theme_data", {})
@@ -3947,7 +4226,7 @@ def score_scarcity(info, hist, scores, cm, enriched=None):
             bn_reason = STOCK_THESIS[ticker].get("bottleneck_reason", "")
         reasons.append(f"CONFIRMED BOTTLENECK — {bn_reason[:120]}" if bn_reason else "Supply bottleneck — irreplaceable in the value chain")
     else:
-        s -= 5
+        reasons.append("No confirmed bottleneck signal — scarcity score stays evidence-based")
 
     summary = (info.get("longBusinessSummary", "") or "").lower()
     moat_kw = ["patent","proprietary","exclusive","sole supplier","only provider","monopoly","irreplaceable","dominant","market leader","leading provider","regulatory approval","fda approved","licensed","classified","security clearance"]
@@ -4311,6 +4590,22 @@ def compute_conviction_score(info, hist, scores, cm, hunter_components):
         if vol_prior > 0 and vol_recent > vol_prior * 1.2:
             s += 5; reasons.append("Flow: volume surge — 20%+ above prior period")
 
+    alpha = mvp_opportunity_alpha(info, hist)
+    if alpha > 0:
+        s += min(alpha, 12)
+        reasons.append(f"Opportunity alpha: growth, trend, upside, or balance sheet adds +{min(alpha, 12)}")
+    elif alpha < -4:
+        s += max(alpha, -8)
+        reasons.append(f"Risk alpha: observed weakness subtracts {abs(max(alpha, -8))}")
+
+    breakout = breakout_acceleration_alpha(info, hist)
+    if breakout > 0:
+        s += min(breakout, 15)
+        reasons.append(f"Breakout acceleration: volume spike, relative strength, or momentum regime adds +{min(breakout, 15)}")
+    elif breakout < -2:
+        s += max(breakout, -4)
+        reasons.append(f"Breakout drag: weak relative strength or exhaustion signal {max(breakout, -4)}")
+
     return {"score": max(0, min(100, s)), "reasons": reasons}
 
 
@@ -4332,19 +4627,20 @@ def compute_hunter(info, hist, scores, cm, enriched=None):
         scarcity["score"] * 0.10 +
         timing["score"] * 0.10 +
         cap["score"] * 0.20 +
-        (100 - crowding["score"]) * 0.10
+        (100 - crowding["score"]) * 0.10 +
+        min(mvp_opportunity_alpha(info, hist), 12)
     )
 
     components = {"narrative": narrative, "positioning": positioning, "force": force,
                   "scarcity": scarcity, "timing": timing, "cap": cap, "crowding": crowding}
     conviction = compute_conviction_score(info, hist, scores, cm, components)
 
-    # CFIS 3.0 CALIBRATION — "Act at 70% conviction"
-    # 85+ = ATTACK, 75-84 = COMMIT, 65-74 = PILOT, <65 = PASS
-    if hunter_score >= 85: classification = "Attack Zone"
-    elif hunter_score >= 75: classification = "Commit Zone"
-    elif hunter_score >= 65: classification = "Pilot Zone"
-    elif hunter_score >= 50: classification = "Monitor"
+    # CFIS-X Lite calibration: act on confirmed opportunity, not only perfect consensus.
+    # 80+ = ATTACK, 70-79 = COMMIT, 60-69 = PILOT, <60 = PASS/MONITOR
+    if hunter_score >= 80: classification = "Attack Zone"
+    elif hunter_score >= 70: classification = "Commit Zone"
+    elif hunter_score >= 60: classification = "Pilot Zone"
+    elif hunter_score >= 45: classification = "Monitor"
     else: classification = "Weak"
 
     hs = hunter_score
@@ -4362,23 +4658,23 @@ def compute_hunter(info, hist, scores, cm, enriched=None):
     survivable = mc > 2e9 or total_cash > total_debt * 0.5 or total_debt == 0
     louis_override = survivable
 
-    # CFIS 3.0 Action Engine — aligned with "Act at 70% Conviction"
-    if hs >= 85 and conv >= 75 and cap_s >= 75 and force_s >= 75 and timing_s >= 65 and louis_override:
+    # CFIS-X Lite Action Engine — opportunity-adjusted, still risk-aware.
+    if hs >= 80 and conv >= 70 and cap_s >= 70 and force_s >= 65 and timing_s >= 55 and louis_override:
         action = "STRONG GO"
         action_color = "#00E676"
         action_icon = "⚡"
         action_desc = "ATTACK zone. Reality + Flow + Risk aligned. Entry window may be active."
-    elif hs >= 75 and conv >= 65 and cap_s >= 65 and force_s >= 65 and timing_s >= 55 and louis_override:
+    elif hs >= 70 and conv >= 60 and cap_s >= 60 and force_s >= 55 and timing_s >= 45 and louis_override:
         action = "GO"
         action_color = "#4CAF50"
         action_icon = "🔥"
         action_desc = "COMMIT zone. 70%+ conviction reached. Flow confirmed. Consider staged entry."
-    elif hs >= 65:
+    elif hs >= 60:
         wait_reasons = []
-        if timing_s < 55: wait_reasons.append("Timing not mature")
-        if conv < 65: wait_reasons.append("Conviction building")
-        if force_s < 65: wait_reasons.append("Force needs confirmation")
-        if cap_s < 65: wait_reasons.append("Capital flow emerging")
+        if timing_s < 45: wait_reasons.append("Timing not mature")
+        if conv < 60: wait_reasons.append("Conviction building")
+        if force_s < 55: wait_reasons.append("Force needs confirmation")
+        if cap_s < 60: wait_reasons.append("Capital flow emerging")
         if crowding_s >= 70: wait_reasons.append("Crowding elevated")
         if not louis_override: wait_reasons.append("Survivability risk — weak balance sheet")
         action = "PILOT"
@@ -4389,9 +4685,9 @@ def compute_hunter(info, hist, scores, cm, enriched=None):
         action = "PASS"
         action_color = "#78909C"
         action_icon = "❌"
-        action_desc = "Below 65% conviction. Reality not confirmed. Move on."
+        action_desc = "Below 60% conviction. Opportunity not confirmed yet."
 
-    hunt_alert = (cap_s >= 75 and force_s >= 75 and timing_s >= 65 and conv >= 75 and crowding_s < 60)
+    hunt_alert = (cap_s >= 70 and force_s >= 65 and timing_s >= 55 and conv >= 70 and crowding_s < 65)
 
     return {
         "narrative": narrative, "positioning": positioning, "force": force,
@@ -5840,6 +6136,27 @@ def compute_trend_strength(ticker):
         rsi_14 = _compute_rsi(hist["Close"], 14)
 
         proj = cfis_projection(info, hist, trend_score, trend_score * 0.8, 50)
+        opt_liquidity = 50
+        target_expiry = ""
+        try:
+            today = datetime.now().date()
+            expiries = []
+            for d in list(tk.options):
+                exp = datetime.strptime(d, "%Y-%m-%d").date()
+                dte = (exp - today).days
+                if 30 <= dte <= 60:
+                    expiries.append((abs(dte - 45), d, dte))
+            if expiries:
+                _, target_expiry, target_dte = sorted(expiries)[0]
+                chain = tk.option_chain(target_expiry)
+                call_vol = chain.calls["volume"].fillna(0).sum() if "volume" in chain.calls else 0
+                put_vol = chain.puts["volume"].fillna(0).sum() if "volume" in chain.puts else 0
+                call_oi = chain.calls["openInterest"].fillna(0).sum() if "openInterest" in chain.calls else 0
+                put_oi = chain.puts["openInterest"].fillna(0).sum() if "openInterest" in chain.puts else 0
+                option_interest = call_vol + put_vol + (call_oi + put_oi) * 0.05
+                opt_liquidity = clamp(35 + min(option_interest / 25000 * 45, 45) + (10 if target_dte <= 50 else 5))
+        except Exception:
+            opt_liquidity = 50
 
         return {
             "ticker": ticker,
@@ -5855,10 +6172,12 @@ def compute_trend_strength(ticker):
             "sma_50": round(sma_50, 2),
             "avg_vol": int(avg_vol),
             "market_cap": safe(info, "marketCap", default=0) or 0,
-            "proj_15d": proj["15d"],
-            "proj_30d": proj["30d"],
-            "proj_90d": proj["90d"],
-        }
+                "proj_15d": proj["15d"],
+                "proj_30d": proj["30d"],
+                "proj_90d": proj["90d"],
+                "option_liquidity": opt_liquidity,
+                "target_expiry": target_expiry,
+            }
     except Exception:
         return None
 
@@ -5913,15 +6232,20 @@ def generate_options_signals(universe_tuple):
         conviction = 0
         reasons = []
 
-        conviction += c["trend_score"] * 0.30
-        reasons.append(f"Trend {c['trend_score']}/100")
+        conviction += c["trend_score"] * 0.25
+        reasons.append(f"Direction {c['trend_score']}/100")
 
         if smp["score"] >= 65:
-            conviction += smp["score"] * 0.25
+            conviction += smp["score"] * 0.20
             reasons.append(f"Smart Money {smp['score']}/100 ({smp['signal']})")
         else:
-            conviction += smp["score"] * 0.15
+            conviction += smp["score"] * 0.12
             reasons.append(f"Smart Money {smp['score']}/100")
+        conviction += c.get("option_liquidity", 50) * 0.15
+        reasons.append(f"Options liquidity {c.get('option_liquidity', 50)}/100")
+        conviction += max(0, min(c.get("proj_30d", 0), 12)) * 1.0
+        if c.get("proj_30d", 0) > 0:
+            reasons.append(f"30D projection {c.get('proj_30d', 0):+.1f}%")
 
         if fg_score >= 60:
             conviction += 8
@@ -5962,8 +6286,10 @@ def generate_options_signals(universe_tuple):
             "smart_money": smp["score"],
             "smart_signal": smp["signal"],
             "entry_window": entry_timing,
-            "strike_hint": f"ATM or 1-2 strikes OTM (${c['price']:.0f} area)",
-            "reasons": reasons,
+                "strike_hint": f"ATM or 1-2 strikes OTM (${c['price']:.0f} area)",
+                "expiry_hint": c.get("target_expiry", "30-60 DTE"),
+                "option_liquidity": c.get("option_liquidity", 50),
+                "reasons": reasons,
             "avg_vol": c["avg_vol"],
             "proj_15d": c.get("proj_15d", 0),
             "proj_30d": c.get("proj_30d", 0),
@@ -5980,17 +6306,20 @@ def generate_options_signals(universe_tuple):
         conviction = 0
         reasons = []
 
-        conviction += c["trend_score"] * 0.30
-        reasons.append(f"Trend {c['trend_score']}/100")
+        conviction += c["trend_score"] * 0.25
+        reasons.append(f"Direction {c['trend_score']}/100")
 
         if smp["score"] <= 40:
-            conviction += (100 - smp["score"]) * 0.25
+            conviction += (100 - smp["score"]) * 0.20
             reasons.append(f"Smart Money {smp['score']}/100 ({smp['signal']})")
         elif smp["signal"] in ("Distribution", "Short Pressure", "Danger Zone"):
             conviction += 15
             reasons.append(f"Smart Money {smp['signal']}")
         else:
             conviction += (100 - smp["score"]) * 0.10
+        conviction += c.get("option_liquidity", 50) * 0.15
+        reasons.append(f"Options liquidity {c.get('option_liquidity', 50)}/100")
+        conviction += max(0, min(abs(c.get("proj_30d", 0)), 12)) * 0.8
 
         if fg_score <= 30:
             conviction += 8
@@ -6030,8 +6359,10 @@ def generate_options_signals(universe_tuple):
             "smart_money": smp["score"],
             "smart_signal": smp["signal"],
             "entry_window": entry_timing,
-            "strike_hint": f"ATM or 1-2 strikes OTM (${c['price']:.0f} area)",
-            "reasons": reasons,
+                "strike_hint": f"ATM or 1-2 strikes OTM (${c['price']:.0f} area)",
+                "expiry_hint": c.get("target_expiry", "30-60 DTE"),
+                "option_liquidity": c.get("option_liquidity", 50),
+                "reasons": reasons,
             "avg_vol": c["avg_vol"],
             "proj_15d": c.get("proj_15d", 0),
             "proj_30d": c.get("proj_30d", 0),
@@ -6046,6 +6377,214 @@ def generate_options_signals(universe_tuple):
         "puts": put_setups[:5],
         "fear_greed": fg,
         "total_scanned": len(trends),
+        "uptrend_count": len(uptrends),
+        "downtrend_count": len(downtrends),
+    }
+
+
+@st.cache_data(ttl=300)
+def generate_options_signals(universe_tuple):
+    """Fast 60-day options setup scan.
+
+    Uses batch candles and liquidity proxies so the page can load reliably.
+    Full option-chain inspection is intentionally avoided here because it stalls
+    local Streamlit when scanning hundreds of names.
+    """
+    universe = list(dict.fromkeys(universe_tuple))
+    try:
+        batch = yf.download(
+            universe,
+            period="6mo",
+            interval="1d",
+            group_by="ticker",
+            progress=False,
+            threads=True,
+            timeout=10,
+        )
+    except Exception:
+        batch = pd.DataFrame()
+
+    def hist_for(ticker):
+        if batch.empty:
+            return pd.DataFrame()
+        try:
+            if isinstance(batch.columns, pd.MultiIndex):
+                if ticker in batch.columns.get_level_values(0):
+                    return batch[ticker].dropna(how="all")
+                if ticker in batch.columns.get_level_values(1):
+                    return batch.xs(ticker, axis=1, level=1).dropna(how="all")
+            return batch.dropna(how="all")
+        except Exception:
+            return pd.DataFrame()
+
+    fg = fetch_fear_greed_index()
+    fg_score = fg.get("score", 50)
+    liquid_options = LIQUID_OPTION_NAMES | {
+        "AAPL","MSFT","AMZN","GOOGL","META","NFLX","JPM","BAC","XOM","CVX",
+        "QCOM","MU","CRM","ORCL","ADBE","SHOP","UBER","BABA","PDD","RBLX",
+    }
+
+    candidates = []
+    for t in universe:
+        try:
+            hist = hist_for(t)
+            if hist.empty or len(hist) < 60 or "Close" not in hist.columns or "Volume" not in hist.columns:
+                continue
+            close = hist["Close"].dropna()
+            vol = hist["Volume"].fillna(0)
+            if len(close) < 60:
+                continue
+            price = float(close.iloc[-1])
+            if price <= 0:
+                continue
+
+            mom_15 = (close.iloc[-1] - close.iloc[-15]) / close.iloc[-15] * 100
+            mom_30 = (close.iloc[-1] - close.iloc[-30]) / close.iloc[-30] * 100
+            mom_60 = (close.iloc[-1] - close.iloc[-60]) / close.iloc[-60] * 100
+            sma_10 = close.tail(10).mean()
+            sma_20 = close.tail(20).mean()
+            sma_50 = close.tail(50).mean()
+            vol_ratio = vol.tail(5).mean() / vol.tail(30).mean() if vol.tail(30).mean() > 0 else 1
+            avg_vol = vol.tail(20).mean()
+            dollar_vol = avg_vol * price
+            rsi = _compute_rsi(close, 14) or 50
+
+            option_liquidity = 35
+            if dollar_vol > 1_000_000_000:
+                option_liquidity += 34
+            elif dollar_vol > 300_000_000:
+                option_liquidity += 24
+            elif dollar_vol > 100_000_000:
+                option_liquidity += 16
+            elif dollar_vol > 30_000_000:
+                option_liquidity += 8
+            else:
+                option_liquidity -= 8
+            if t in liquid_options:
+                option_liquidity += 20
+            if price < 3:
+                option_liquidity -= 12
+            option_liquidity = clamp(option_liquidity)
+
+            up_structure = price > sma_10 > sma_20 and price > sma_50
+            down_structure = price < sma_10 < sma_20 and price < sma_50
+            trend_score = 50
+            direction = "NEUTRAL"
+            if mom_15 > 2 and mom_30 > 4 and up_structure:
+                direction = "UPTREND"
+                trend_score = clamp(64 + min(mom_15 * 1.2, 18) + min(mom_30 * 0.35, 9) + min((vol_ratio - 1) * 8, 8))
+            elif mom_15 < -2 and mom_30 < -4 and down_structure:
+                direction = "DOWNTREND"
+                trend_score = clamp(64 + min(abs(mom_15) * 1.2, 18) + min(abs(mom_30) * 0.35, 9) + min((vol_ratio - 1) * 8, 8))
+            elif mom_15 > 4 and mom_30 > 2:
+                direction = "UPTREND"
+                trend_score = clamp(58 + min(mom_15 * 1.2, 20))
+            elif mom_15 < -4 and mom_30 < -2:
+                direction = "DOWNTREND"
+                trend_score = clamp(58 + min(abs(mom_15) * 1.2, 20))
+
+            proj_15 = clamp(mom_15 * 0.35 + mom_30 * 0.15 + (trend_score - 50) * 0.08 + (vol_ratio - 1) * 2.0, -12, 18)
+            proj_30 = clamp(mom_30 * 0.28 + mom_60 * 0.12 + (trend_score - 50) * 0.12 + (vol_ratio - 1) * 2.5, -18, 24)
+            proj_60 = clamp(proj_30 * 1.25 + (mom_60 * 0.08), -25, 32)
+
+            if direction == "DOWNTREND":
+                proj_15 = -abs(proj_15)
+                proj_30 = -abs(proj_30)
+                proj_60 = -abs(proj_60)
+            elif direction == "UPTREND":
+                proj_15 = abs(proj_15)
+                proj_30 = abs(proj_30)
+                proj_60 = abs(proj_60)
+
+            candidates.append({
+                "ticker": t,
+                "price": round(price, 2),
+                "direction": direction,
+                "trend_score": round(trend_score),
+                "mom_15": round(mom_15, 1),
+                "mom_30": round(mom_30, 1),
+                "mom_60": round(mom_60, 1),
+                "rsi": round(rsi),
+                "vol_ratio": round(vol_ratio, 2),
+                "avg_vol": int(avg_vol),
+                "dollar_vol": dollar_vol,
+                "option_liquidity": round(option_liquidity),
+                "target_expiry": "30-60 DTE",
+                "proj_15d": round(proj_15, 1),
+                "proj_30d": round(proj_30, 1),
+                "proj_90d": round(proj_60, 1),
+            })
+        except Exception:
+            continue
+
+    uptrends = [c for c in candidates if c["direction"] == "UPTREND"]
+    downtrends = [c for c in candidates if c["direction"] == "DOWNTREND"]
+
+    def call_conviction(c):
+        conviction = c["trend_score"] * 0.34 + c["option_liquidity"] * 0.18
+        conviction += max(0, min(c["proj_30d"], 18)) * 0.9
+        conviction += 8 if fg_score >= 60 else (4 if fg_score >= 40 else -4)
+        conviction += 6 if 35 <= c["rsi"] <= 68 else (-6 if c["rsi"] > 75 else 0)
+        conviction += min(max(c["vol_ratio"] - 1, 0) * 8, 8)
+        return round(clamp(conviction))
+
+    def put_conviction(c):
+        conviction = c["trend_score"] * 0.34 + c["option_liquidity"] * 0.18
+        conviction += max(0, min(abs(c["proj_30d"]), 18)) * 0.9
+        conviction += 8 if fg_score <= 35 else (4 if fg_score <= 50 else -3)
+        conviction += 5 if 32 <= c["rsi"] <= 65 else (-6 if c["rsi"] < 25 else 0)
+        conviction += min(max(c["vol_ratio"] - 1, 0) * 8, 8)
+        return round(clamp(conviction))
+
+    call_setups = []
+    for c in sorted(uptrends, key=call_conviction, reverse=True)[:8]:
+        conv = call_conviction(c)
+        entry_timing = "Now - 3 days" if c["mom_15"] > 5 else ("1 - 4 days" if c["mom_15"] > 2 else "3 - 5 days")
+        call_setups.append({
+            **c,
+            "direction": "CALL",
+            "conviction": conv,
+            "smart_money": round(clamp(45 + c["mom_15"] * 1.2 + (c["vol_ratio"] - 1) * 10)),
+            "smart_signal": "Fast Flow Proxy",
+            "entry_window": entry_timing,
+            "strike_hint": f"ATM or 1-2 strikes OTM (${c['price']:.0f} area)",
+            "expiry_hint": "30-60 DTE",
+            "reasons": [
+                f"Direction {c['trend_score']}/100",
+                f"Options liquidity proxy {c['option_liquidity']}/100",
+                f"30D projection {c['proj_30d']:+.1f}%",
+                f"RSI {c['rsi']}",
+                f"Vol {c['vol_ratio']}x",
+            ],
+        })
+
+    put_setups = []
+    for c in sorted(downtrends, key=put_conviction, reverse=True)[:8]:
+        conv = put_conviction(c)
+        entry_timing = "Now - 3 days" if c["mom_15"] < -5 else ("1 - 4 days" if c["mom_15"] < -2 else "3 - 5 days")
+        put_setups.append({
+            **c,
+            "direction": "PUT",
+            "conviction": conv,
+            "smart_money": round(clamp(55 + abs(c["mom_15"]) * 1.1 + (c["vol_ratio"] - 1) * 8)),
+            "smart_signal": "Fast Breakdown Proxy",
+            "entry_window": entry_timing,
+            "strike_hint": f"ATM or 1-2 strikes OTM (${c['price']:.0f} area)",
+            "expiry_hint": "30-60 DTE",
+            "reasons": [
+                f"Direction {c['trend_score']}/100",
+                f"Options liquidity proxy {c['option_liquidity']}/100",
+                f"30D projection {c['proj_30d']:+.1f}%",
+                f"RSI {c['rsi']}",
+                f"Vol {c['vol_ratio']}x",
+            ],
+        })
+
+    return {
+        "calls": call_setups[:5],
+        "puts": put_setups[:5],
+        "fear_greed": fg,
+        "total_scanned": len(candidates),
         "uptrend_count": len(uptrends),
         "downtrend_count": len(downtrends),
     }
@@ -6295,7 +6834,7 @@ def _build_row(t, info, hist, enriched=None):
     if not price:
         return None
     scores = compute_all_scores(info, hist, None, None)
-    cfis = cfis_composite(scores)
+    cfis = cfis_composite(scores, info, hist)
     cm = compute_capital_migration(info, hist, t)
     if enriched is None:
         enriched = {"data_quality": 0}
@@ -6400,15 +6939,13 @@ def scan_opportunities(universe_tuple):
     top_tickers = {r["ticker"] for r in fast_rows[:10]}
 
     rows = []
-    enrich_failed = False
     for r in fast_rows:
         t = r["ticker"]
-        if t in top_tickers and t in prefetched and not enrich_failed:
+        if t in top_tickers and t in prefetched:
             try:
                 info, hist = prefetched[t]
                 enriched = fetch_enriched_data(t)
                 if enriched.get("data_quality", 0) == 0:
-                    enrich_failed = True
                     rows.append(r)
                     continue
                 enriched_row = _build_row(t, info, hist, enriched)
@@ -6416,7 +6953,7 @@ def scan_opportunities(universe_tuple):
                     rows.append(enriched_row)
                     continue
             except Exception:
-                enrich_failed = True
+                pass
         rows.append(r)
 
     save_scan_results(rows)
@@ -7103,7 +7640,7 @@ def fetch_top30():
             if not price:
                 continue
             scores = compute_all_scores(info, hist, None, None)
-            cfis  = cfis_composite(scores)
+            cfis  = cfis_composite(scores, info, hist)
             opp   = opportunity_score(cfis, info, hist)
 
             # CFIS 3.0 native projections
@@ -7192,7 +7729,7 @@ def scan_combo_plays():
                 time.sleep(0.3)
 
             scores = compute_all_scores(info, hist, None, None)
-            cfis   = cfis_composite(scores)
+            cfis   = cfis_composite(scores, info, hist)
             opp    = opportunity_score(cfis, info, hist)
             outlooks = generate_outlooks(info, hist, cfis)
 
@@ -7439,8 +7976,9 @@ def scan_macro_put_combo():
 
 
 with st.sidebar:
-    st.markdown("""
+    st.markdown(dedent(f"""
     <div style="text-align:center;padding:8px 0 4px 0">
+        {cfis_signal_icon(48)}
         <div style="font-size:22px;font-weight:900;color:#ffffff;letter-spacing:4px;
                     font-family:'Inter',sans-serif">CFIS</div>
         <div style="font-size:8px;color:#7c3aed;letter-spacing:3px;margin-top:2px;font-weight:700">
@@ -7448,20 +7986,19 @@ with st.sidebar:
         <div style="width:40px;height:1px;background:linear-gradient(90deg,#7c3aed,#4CAF50);
                     margin:8px auto"></div>
     </div>
-    """, unsafe_allow_html=True)
+    """).strip(), unsafe_allow_html=True)
     st.caption("by mono378 · Institutional Intelligence")
     st.divider()
     page = st.radio("Navigation", [
-        "1️⃣ Market Health",
-        "2️⃣ Capital Migration",
-        "3️⃣ Opportunity Engine",
-        "4️⃣ Portfolio Commander",
-        "5️⃣ Validation Engine",
-        "6️⃣ Hunter Command by Louis Teo",
-        "7️⃣ Options Intelligence by Louis Teo",
-        "8️⃣ CFIS Frontier by Louis Teo",
-        "🌳 Louis Regeneration Index™",
-    ], label_visibility="collapsed")
+        "1️⃣ Command Center",
+        "2️⃣ 15-Day Up Signals",
+        "3️⃣ 60-Day Options",
+        "4️⃣ Single Ticker Scanner",
+        "5️⃣ Pattern Memory",
+        "6️⃣ Macro Chessboard",
+        "7️⃣ Bridgewater/Aladdin Overlay",
+        "8️⃣ A-Level Upgrade Roadmap",
+    ], index=1, label_visibility="collapsed")
     st.divider()
     st.caption("Data: Yahoo Finance · Cache: 5 min")
     st.caption("CFIS V10 by mono378")
@@ -7489,7 +8026,7 @@ def fetch_theme(tickers_tuple):
             info = tk.info or {}
             hist = tk.history(period="1y")
             scores = compute_all_scores(info, hist, None, None)
-            cfis   = cfis_composite(scores)
+            cfis   = cfis_composite(scores, info, hist)
             opp    = opportunity_score(cfis, info, hist)
             price  = safe(info, "currentPrice", "regularMarketPrice", default=0)
             if not price and not hist.empty:
@@ -7577,22 +8114,56 @@ RADAR_UNIVERSE = [
 def scan_radar(universe):
     import time
     results = []
-    for i, t in enumerate(universe):
+    tickers = list(dict.fromkeys(universe))
+
+    try:
+        batch = yf.download(
+            tickers,
+            period="3mo",
+            interval="1d",
+            group_by="ticker",
+            progress=False,
+            threads=True,
+            timeout=8,
+        )
+    except Exception:
+        batch = pd.DataFrame()
+
+    def ticker_history(ticker):
+        if batch.empty:
+            try:
+                return yf.Ticker(ticker).history(period="3mo")
+            except Exception:
+                return pd.DataFrame()
+        if isinstance(batch.columns, pd.MultiIndex):
+            levels_0 = batch.columns.get_level_values(0)
+            levels_1 = batch.columns.get_level_values(1)
+            if ticker in levels_0:
+                return batch[ticker].dropna(how="all")
+            if ticker in levels_1:
+                return batch.xs(ticker, axis=1, level=1).dropna(how="all")
+        return batch.dropna(how="all")
+
+    base_rows = []
+    for t in tickers:
         try:
-            ticker_obj = yf.Ticker(t)
-            info = ticker_obj.info or {}
-            hist = ticker_obj.history(period="3mo")
+            hist = ticker_history(t)
             if hist.empty or len(hist) < 15:
                 continue
 
-            price = safe(info, "currentPrice", "regularMarketPrice", default=0) or 0
-            if price == 0:
-                price = float(hist["Close"].iloc[-1])
-            if price == 0:
+            close_col = "Close" if "Close" in hist.columns else ("Adj Close" if "Adj Close" in hist.columns else None)
+            if not close_col or "Volume" not in hist.columns:
                 continue
 
-            close  = hist["Close"]
-            vol    = hist["Volume"]
+            close = hist[close_col].dropna()
+            vol = hist["Volume"].fillna(0)
+            if len(close) < 15:
+                continue
+
+            price = float(close.iloc[-1])
+            if not price:
+                continue
+
             ret_15 = (close.iloc[-1] - close.iloc[-15]) / close.iloc[-15] * 100
             ret_5  = (close.iloc[-1] - close.iloc[-5])  / close.iloc[-5]  * 100
             ret_1  = (close.iloc[-1] - close.iloc[-2])  / close.iloc[-2]  * 100
@@ -7600,6 +8171,65 @@ def scan_radar(universe):
             avg_vol_20 = vol.rolling(20).mean().iloc[-1]
             recent_vol = vol.iloc[-5:].mean()
             vol_spike  = (recent_vol / avg_vol_20) if avg_vol_20 > 0 else 1.0
+            dollar_vol = float(recent_vol * price)
+
+            timing_score = clamp(
+                50 +
+                min(ret_15 * 1.6, 30) +
+                min(ret_5 * 2.0, 16) +
+                min((vol_spike - 1) * 20, 18)
+            )
+            base_score = clamp(timing_score * 0.72 + 50 * 0.28)
+
+            base_rows.append({
+                "ticker": t,
+                "hist": hist,
+                "price": price,
+                "ret_15": ret_15,
+                "ret_5": ret_5,
+                "ret_1": ret_1,
+                "vol_spike": vol_spike,
+                "avg_vol_20": avg_vol_20,
+                "recent_vol": recent_vol,
+                "dollar_vol": dollar_vol,
+                "timing_score": timing_score,
+                "base_score": base_score,
+            })
+        except Exception:
+            continue
+
+    base_rows.sort(key=lambda x: x["base_score"], reverse=True)
+    enrich_set = {r["ticker"] for r in base_rows[:18]}
+    ai_tickers = {"NVDA","AMD","SMCI","PLTR","IONQ","QBTS","RGTI","SOUN","AI","ARM","MRVL","AVGO","ANET","VRT","DELL"}
+    geo_tickers = {"LMT","RTX","NOC","BWXT","CACI","KTOS","AVAV","HII","GD","INTC","CCJ","UEC","DNN","NNE","SMR","OKLO","MP","FSLR"}
+    energy_tickers = {"CEG","VST","CCJ","UEC","DNN","NNE","SMR","OKLO","FSLR","ENPH","NEE"}
+    crypto_tickers = {"COIN","MSTR","MARA","RIOT","CLSK","HOOD","XYZ","PYPL"}
+    biotech_tickers = {"RXRX","TDOC","ILMN","PACB","EDIT","CRSP","ISRG"}
+    visionary_tickers = {"NVDA","AMD","TSLA","PLTR","COIN","MSTR"}
+
+    for i, row in enumerate(base_rows):
+        t = row["ticker"]
+        hist = row["hist"]
+        price = row["price"]
+        ret_15 = row["ret_15"]
+        ret_5 = row["ret_5"]
+        ret_1 = row["ret_1"]
+        vol_spike = row["vol_spike"]
+        dollar_vol = row.get("dollar_vol", 0)
+        timing_score = row["timing_score"]
+        try:
+            info = {}
+            close_col = "Close" if "Close" in hist.columns else ("Adj Close" if "Adj Close" in hist.columns else None)
+            close = hist[close_col].dropna() if close_col else pd.Series(dtype=float)
+            sma_20 = float(close.tail(20).mean()) if len(close) >= 20 else price
+            sma_50 = float(close.tail(50).mean()) if len(close) >= 50 else sma_20
+            dist_20 = ((price - sma_20) / sma_20 * 100) if sma_20 else 0
+            up_days_10 = int((close.diff().tail(10) > 0).sum()) if len(close) >= 11 else 0
+            swing_low_10 = float(close.tail(10).min()) if len(close) >= 10 else price * 0.94
+            stop_price = max(swing_low_10 * 0.985, sma_20 * 0.97) if sma_20 else swing_low_10 * 0.985
+            if stop_price >= price:
+                stop_price = price * 0.94
+            stop_pct = (stop_price - price) / price * 100 if price else -6
 
             short_pct   = safe(info, "shortPercentOfFloat", default=0) or 0
             short_ratio = safe(info, "shortRatio", default=0) or 0
@@ -7607,85 +8237,424 @@ def scan_radar(universe):
             if short_pct > 0.15 and ret_15 > 5:
                 squeeze_score = min(100, int(short_pct * 200 + ret_15 * 2))
 
-            try:
-                dates = list(ticker_obj.options)
-                if dates:
-                    chain  = ticker_obj.option_chain(dates[0])
-                    call_v = chain.calls["volume"].sum() if "volume" in chain.calls else 0
-                    put_v  = chain.puts["volume"].sum()  if "volume" in chain.puts  else 0
-                    call_oi= chain.calls["openInterest"].sum() if "openInterest" in chain.calls else 1
-                    opt_activity = (call_v / call_oi) if call_oi > 0 else 0
-                    pc_ratio     = (put_v / call_v)  if call_v  > 0 else 1.0
-                else:
-                    opt_activity = 0; pc_ratio = 1.0; call_v = put_v = 0
-            except:
-                opt_activity = 0; pc_ratio = 1.0; call_v = put_v = 0
+            opt_activity = 0; pc_ratio = 1.0; call_v = put_v = 0
+            # Keep the 15-day page fast. Full option-chain analysis lives in the
+            # 60-day options page, because option calls are the most common stall.
 
-            dims      = louis_intuition_engine(info, hist, t, None, None)
-            geo_score = dims["Geopolitical Importance"]
-            ai_score  = dims["AI Leverage"]
-            _, lp, _  = get_leader_intel(info, t)
+            scores = {"Market Regime Intelligence": 50}
+            geo_score = 74 if t in geo_tickers else 50
+            ai_score = 78 if t in ai_tickers else 50
+            lp = 86 if t in visionary_tickers else 50
+            theme_boost = 0
+            if t in ai_tickers:
+                theme_boost += 10
+            if t in geo_tickers:
+                theme_boost += 8
+            if t in energy_tickers:
+                theme_boost += 6
+            if t in crypto_tickers:
+                theme_boost += 5
+            if t in biotech_tickers:
+                theme_boost += 4
+
+            corp_score = clamp(50 + min(max(ret_15, -10), 20) * 0.35 + (4 if t in visionary_tickers else 0))
+            geopolitical_score = clamp(50 + (geo_score - 50) * 0.75 + (4 if t in energy_tickers else 0))
+            global_synergy = clamp(50 + theme_boost + max(ret_15, 0) * 0.25)
+            cap_migration = clamp(
+                50 +
+                max(ret_15, -12) * 0.85 +
+                max(ret_5, -8) * 1.10 +
+                max(vol_spike - 1, 0) * 16 +
+                theme_boost * 0.45
+            )
+            options_score = 50
+
+            emotion = clamp(50 + min((vol_spike - 1) * 15, 25) + min(opt_activity * 6, 15) - max(pc_ratio - 1.2, 0) * 8)
+            invisible_hand = (
+                scores.get("Market Regime Intelligence", 50) * 0.45 +
+                geo_score * 0.25 +
+                cap_migration * 0.30
+            )
+            timing_score = clamp(
+                50 +
+                min(ret_15 * 1.4, 28) +
+                min(ret_5 * 2.0, 16) +
+                min((vol_spike - 1) * 18, 18) +
+                min(opt_activity * 5, 12) -
+                max(pc_ratio - 1.5, 0) * 8
+            )
 
             hot = (
-                min(ret_15 * 1.5, 40)            +
-                min((vol_spike - 1) * 20, 20)    +
-                (geo_score + ai_score) / 2 * 0.25+
-                min(opt_activity * 10, 15)
+                cap_migration * 0.30 +
+                timing_score * 0.25 +
+                corp_score * 0.20 +
+                geopolitical_score * 0.10 +
+                global_synergy * 0.07 +
+                options_score * 0.05 +
+                emotion * 0.03
             )
+            tactical_boost = clamp(
+                max(ret_15, 0) * 0.85 +
+                max(ret_5, 0) * 1.10 +
+                max(vol_spike - 1, 0) * 10,
+                0,
+                24
+            )
+            hot += tactical_boost
+            if ret_15 > 20:
+                hot = max(hot, 68)
+            elif ret_15 > 10:
+                hot = max(hot, 60)
+            elif ret_15 > 5 and vol_spike > 1.2:
+                hot = max(hot, 56)
             hot = max(0, min(100, round(hot)))
 
+            confirmation = 35
+            if 3 <= ret_15 <= 18:
+                confirmation += 14
+            elif 18 < ret_15 <= 30:
+                confirmation += 7
+            elif ret_15 > 30:
+                confirmation -= 15
+            elif ret_15 > 0:
+                confirmation += 6
+            else:
+                confirmation -= 10
+
+            if ret_5 > 3:
+                confirmation += 8
+            elif ret_5 > 0:
+                confirmation += 4
+            elif ret_5 < -4:
+                confirmation -= 12
+
+            if ret_1 < -5:
+                confirmation -= 10
+            elif ret_1 > 0:
+                confirmation += 3
+
+            if 1.15 <= vol_spike <= 2.8:
+                confirmation += 18
+            elif vol_spike > 2.8:
+                confirmation += 6
+            elif vol_spike >= 0.95:
+                confirmation += 3
+            elif vol_spike < 0.75:
+                confirmation -= 8
+
+            if price > sma_20:
+                confirmation += 6
+            else:
+                confirmation -= 8
+            if price > sma_50:
+                confirmation += 5
+            if dist_20 > 25:
+                confirmation -= 18
+            elif dist_20 > 18:
+                confirmation -= 10
+            elif 0 <= dist_20 <= 10:
+                confirmation += 6
+            elif 10 < dist_20 <= 18:
+                confirmation += 2
+
+            if 5 <= up_days_10 <= 8:
+                confirmation += 7
+            elif up_days_10 >= 9:
+                confirmation -= 8
+
+            confirmation += min(theme_boost * 0.6, 6)
+            confirmation = max(0, min(100, round(confirmation)))
+            if confirmation >= 75:
+                confirm_label = "CONFIRMED"
+            elif confirmation >= 60:
+                confirm_label = "BUILDING"
+            elif confirmation >= 45:
+                confirm_label = "EARLY"
+            else:
+                confirm_label = "WEAK"
+
             tags = []
-            if ret_15 > 20:    tags.append("🚀 Strong Breakout")
-            elif ret_15 > 10:  tags.append("📈 Momentum Building")
-            elif ret_15 > 5:   tags.append("↗️ Trending Up")
-            elif ret_15 < -10: tags.append("📉 Under Pressure")
-            if vol_spike > 2.5:  tags.append("🔊 Volume Surge 2.5x+")
-            elif vol_spike > 1.5:tags.append("🔊 Volume Elevated")
-            if squeeze_score > 30: tags.append(f"💥 Squeeze Setup ({int(short_pct*100)}% short)")
-            if opt_activity > 1.5: tags.append("🎲 Unusual Call Activity")
-            if pc_ratio < 0.5:     tags.append("📗 Heavy Call Buying")
-            if pc_ratio > 2.0:     tags.append("📕 Heavy Put Buying")
-            if geo_score > 65:     tags.append("🌍 Geopolitical Catalyst")
-            if ai_score > 65:      tags.append("🤖 AI Tailwind")
-            if lp >= 85:           tags.append("👑 Visionary CEO")
+            if ret_15 > 20:    tags.append("Strong Breakout")
+            elif ret_15 > 10:  tags.append("Momentum Building")
+            elif ret_15 > 5:   tags.append("Trending Up")
+            elif ret_15 < -10: tags.append("Under Pressure")
+            if vol_spike > 2.5:  tags.append("Volume Surge 2.5x+")
+            elif vol_spike > 1.5:tags.append("Volume Elevated")
+            if squeeze_score > 30: tags.append(f"Squeeze Setup ({int(short_pct*100)}% short)")
+            if opt_activity > 1.5: tags.append("Unusual Call Activity")
+            if pc_ratio < 0.5:     tags.append("Heavy Call Buying")
+            if pc_ratio > 2.0:     tags.append("Heavy Put Buying")
+            if geo_score > 65:     tags.append("Geopolitical Catalyst")
+            if ai_score > 65:      tags.append("AI Tailwind")
+            if lp >= 85:           tags.append("Visionary CEO")
 
             reasons = []
             if vol_spike > 2.0:
-                reasons.append(f"Volume is {vol_spike:.1f}x the 20-day average — unusual accumulation or retail surge.")
+                reasons.append(f"Volume is {vol_spike:.1f}x the 20-day average - unusual accumulation or retail surge.")
             if squeeze_score > 30:
-                reasons.append(f"{int(short_pct*100)}% of float is shorted — a move up forces covering, which accelerates the rally.")
+                reasons.append(f"{int(short_pct*100)}% of float is shorted - a move up forces covering, which accelerates the rally.")
             if opt_activity > 1.5:
-                reasons.append("Options volume is running far above open interest — traders placing fresh directional bets.")
+                reasons.append("Options volume is running far above open interest - traders placing fresh directional bets.")
             if geo_score > 65:
-                reasons.append("Geopolitically relevant — benefits from current world events (defense spend, energy, chip wars).")
+                reasons.append("Geopolitically relevant - benefits from current world events such as defense, energy, or chip policy.")
             if ai_score > 65:
-                reasons.append("Direct AI exposure — capital rotating into AI-leveraged companies right now.")
+                reasons.append("Direct AI exposure - capital rotation is rewarding AI-leveraged names.")
             if ret_15 > 15:
-                reasons.append(f"Up {ret_15:.1f}% in 15 days — strong price action that often attracts more buyers.")
+                reasons.append(f"Up {ret_15:.1f}% in 15 days - strong price action can attract more buyers.")
             if not reasons:
                 reasons.append("Moderate signals across momentum, volume, and theme relevance. Worth monitoring.")
 
             results.append({
-                "ticker": t, "name": info.get("shortName", t)[:20],
+                "ticker": t, "name": (info.get("shortName", t) or t)[:20],
                 "price": price, "ret_15": ret_15, "ret_5": ret_5, "ret_1": ret_1,
                 "vol_spike": vol_spike, "short_pct": short_pct * 100,
                 "squeeze": squeeze_score, "opt_activity": opt_activity,
                 "pc_ratio": pc_ratio, "geo": geo_score, "ai": ai_score,
                 "hot_score": hot, "tags": tags, "reason": " ".join(reasons),
+                "confirmation": confirmation, "confirm_label": confirm_label,
+                "dist_20": dist_20, "up_days_10": up_days_10,
+                "sma_20": sma_20, "sma_50": sma_50,
+                "stop_price": stop_price, "stop_pct": stop_pct,
+                "dollar_vol": dollar_vol,
                 "call_vol": int(call_v), "put_vol": int(put_v),
+                "corporate": round(corp_score),
+                "geopolitical": round(geopolitical_score),
+                "global_synergy": round(global_synergy),
+                "capital_migration": round(cap_migration),
+                "emotion": round(emotion),
+                "invisible_hand": round(invisible_hand),
+                "timing_score": round(timing_score),
             })
         except Exception:
-            pass
-        if (i + 1) % 6 == 0:
-            time.sleep(0.3)
+            results.append({
+                "ticker": t, "name": t,
+                "price": price, "ret_15": ret_15, "ret_5": ret_5, "ret_1": ret_1,
+                "vol_spike": vol_spike, "short_pct": 0,
+                "squeeze": 0, "opt_activity": 0, "pc_ratio": 1.0,
+                "geo": 50, "ai": 50,
+                "hot_score": round(row["base_score"]), "tags": ["Price/volume signal"],
+                "confirmation": 45, "confirm_label": "EARLY",
+                "dist_20": 0, "up_days_10": 0,
+                "sma_20": price, "sma_50": price,
+                "stop_price": price * 0.94, "stop_pct": -6,
+                "dollar_vol": dollar_vol,
+                "reason": "Fallback signal from price momentum and volume only; detailed Yahoo fundamentals/options data did not return fast enough.",
+                "call_vol": 0, "put_vol": 0,
+                "corporate": 50, "geopolitical": 50, "global_synergy": 50,
+                "capital_migration": 50, "emotion": 50,
+                "invisible_hand": 50, "timing_score": round(timing_score),
+            })
+
+        if (i + 1) % 8 == 0:
+            time.sleep(0.15)
 
     results.sort(key=lambda x: x["hot_score"], reverse=True)
     return results
 
 
-if page == "1️⃣ Market Health":
-    st.title("📊 Market Health™")
-    st.caption("Is the market environment favorable or dangerous? Analyze any stock through the full CFIS pipeline.")
+OVERLAY_SECTORS = {
+    "AI / Semis": {
+        "tickers": {"NVDA","AMD","SMCI","PLTR","ARM","MRVL","AVGO","ANET","VRT","DELL","MU","INTC","QCOM","TSM","ASML","LRCX","AMAT","KLAC","TER","AI","SOUN"},
+        "etf": "SOXX",
+    },
+    "Energy / Nuclear": {
+        "tickers": {"CEG","VST","CCJ","UEC","DNN","NNE","SMR","OKLO","FSLR","ENPH","NEE","XOM","CVX","TLN"},
+        "etf": "XLU",
+    },
+    "Defense / Aerospace": {
+        "tickers": {"LMT","RTX","NOC","BWXT","CACI","KTOS","AVAV","HII","GD","RKLB","ASTS","LUNR","PL"},
+        "etf": "ITA",
+    },
+    "Crypto / Fintech": {
+        "tickers": {"COIN","MSTR","MARA","RIOT","CLSK","HOOD","XYZ","PYPL","SOFI"},
+        "etf": "BITO",
+    },
+    "Robotics / Automation": {
+        "tickers": {"TSLA","PATH","ISRG","TER","ACHR","JOBY"},
+        "etf": "BOTZ",
+    },
+    "Biotech / Medical AI": {
+        "tickers": {"RXRX","TDOC","ILMN","PACB","EDIT","CRSP"},
+        "etf": "XBI",
+    },
+    "Scarcity / Materials": {
+        "tickers": {"MP","FCX","NEM","LAC","ALB","UUUU","GOLD"},
+        "etf": "XLB",
+    },
+}
+
+LIQUID_OPTION_NAMES = {
+    "SPY","QQQ","IWM","NVDA","AMD","TSLA","PLTR","COIN","MSTR","HOOD","SOFI",
+    "SMCI","ARM","AVGO","MU","INTC","LMT","RTX","XOM","CVX","FSLR","ENPH",
+}
+
+
+def overlay_sector_for(ticker):
+    for sector, data in OVERLAY_SECTORS.items():
+        if ticker in data["tickers"]:
+            return sector, data["etf"]
+    return "General Growth", "QQQ"
+
+
+def _series_return(close, days):
+    try:
+        close = close.dropna()
+        if len(close) < days:
+            return 0
+        start = float(close.iloc[-days])
+        end = float(close.iloc[-1])
+        return (end - start) / start * 100 if start else 0
+    except Exception:
+        return 0
+
+
+@st.cache_data(ttl=300)
+def build_institutional_overlay(universe_tuple):
+    rows = scan_radar(list(universe_tuple))
+    etfs = sorted({data["etf"] for data in OVERLAY_SECTORS.values()} | {"QQQ", "SPY"})
+    try:
+        etf_hist = yf.download(etfs, period="3mo", interval="1d", group_by="ticker", progress=False, threads=True, timeout=8)
+    except Exception:
+        etf_hist = pd.DataFrame()
+
+    def etf_close(sym):
+        if etf_hist.empty:
+            return pd.Series(dtype=float)
+        try:
+            if isinstance(etf_hist.columns, pd.MultiIndex):
+                if sym in etf_hist.columns.get_level_values(0):
+                    return etf_hist[sym]["Close"].dropna()
+                if sym in etf_hist.columns.get_level_values(1):
+                    return etf_hist.xs(sym, axis=1, level=1)["Close"].dropna()
+            return etf_hist["Close"].dropna()
+        except Exception:
+            return pd.Series(dtype=float)
+
+    spy_15 = _series_return(etf_close("SPY"), 15)
+    macro_score = 55
+    macro_label = "UNKNOWN"
+    macro_desc = "Macro data temporarily unavailable"
+    try:
+        macro = fetch_macro_radar()
+        macro_label, macro_desc, _ = macro_regime(macro)
+        macro_score = 78 if macro_label == "GREEN" else (56 if macro_label == "YELLOW" else 28)
+    except Exception:
+        pass
+
+    overlay_rows = []
+    for r in rows:
+        t = r["ticker"]
+        sector, etf = overlay_sector_for(t)
+        etf_series = etf_close(etf)
+        etf_15 = _series_return(etf_series, 15)
+        etf_30 = _series_return(etf_series, 30)
+        sector_rel = etf_15 - spy_15
+        ticker_rel_spy = r.get("ret_15", 0) - spy_15
+        ticker_rel_sector = r.get("ret_15", 0) - etf_15
+        etf_flow = clamp(50 + sector_rel * 2.4 + etf_30 * 0.85)
+
+        dollar_vol = r.get("dollar_vol", 0) or 0
+        liquidity_base = 38
+        if dollar_vol > 1_000_000_000:
+            liquidity_base += 35
+        elif dollar_vol > 300_000_000:
+            liquidity_base += 25
+        elif dollar_vol > 100_000_000:
+            liquidity_base += 16
+        elif dollar_vol > 30_000_000:
+            liquidity_base += 8
+        else:
+            liquidity_base -= 8
+        if t in LIQUID_OPTION_NAMES:
+            liquidity_base += 18
+        if r.get("price", 0) < 3:
+            liquidity_base -= 10
+        options_liquidity = clamp(liquidity_base)
+
+        stop_pct = abs(r.get("stop_pct", -6))
+        risk_stop = clamp(100 - max(stop_pct - 4, 0) * 7 - max(r.get("dist_20", 0) - 16, 0) * 2.2)
+
+        macro_adj = macro_score
+        if macro_label == "RED" and sector in ("Defense / Aerospace", "Energy / Nuclear", "Scarcity / Materials"):
+            macro_adj += 10
+        if macro_label == "RED" and sector in ("Crypto / Fintech", "Robotics / Automation", "Biotech / Medical AI"):
+            macro_adj -= 10
+        macro_adj = clamp(macro_adj)
+
+        projection_15d = (
+            r.get("ret_5", 0) * 0.45 +
+            r.get("ret_15", 0) * 0.18 +
+            ticker_rel_spy * 0.08 +
+            ticker_rel_sector * 0.05 +
+            (macro_adj - 50) * 0.04 +
+            (etf_flow - 50) * 0.035 +
+            (r.get("confirmation", 0) - 60) * 0.06
+        )
+        projection_15d -= max(r.get("dist_20", 0) - 18, 0) * 0.22
+        if r.get("confirmation", 0) < 55:
+            projection_15d -= 2.5
+        if r.get("vol_spike", 1) < 0.8:
+            projection_15d -= 1.5
+        projection_15d = clamp(projection_15d, -8, 18)
+        projection_bull = clamp(projection_15d + min(max(r.get("confirmation", 0) - 55, 0) * 0.08, 4), -6, 24)
+        projection_bear = clamp(projection_15d - min(stop_pct * 0.35, 6), -14, 16)
+        projected_target = r.get("price", 0) * (1 + projection_15d / 100)
+        reward_risk = (max(projection_15d, 0.1) / stop_pct) if stop_pct else 0
+
+        overlay = (
+            r.get("hot_score", 0) * 0.24 +
+            r.get("confirmation", 0) * 0.22 +
+            macro_adj * 0.14 +
+            etf_flow * 0.14 +
+            clamp(50 + ticker_rel_spy * 1.8 + ticker_rel_sector * 1.2) * 0.10 +
+            options_liquidity * 0.08 +
+            risk_stop * 0.08
+        )
+        overlay = round(clamp(overlay))
+
+        if overlay >= 82 and r.get("confirmation", 0) >= 70:
+            action = "INSTITUTIONAL ATTACK"
+        elif overlay >= 72:
+            action = "STAGED PILOT"
+        elif overlay >= 62:
+            action = "WATCHLIST"
+        else:
+            action = "WAIT"
+
+        overlay_rows.append({
+            **r,
+            "overlay_score": overlay,
+            "overlay_action": action,
+            "overlay_sector": sector,
+            "sector_etf": etf,
+            "macro_score": round(macro_adj),
+            "macro_label": macro_label,
+            "macro_desc": macro_desc,
+            "etf_flow": round(etf_flow),
+            "sector_rel": sector_rel,
+            "ticker_rel_spy": ticker_rel_spy,
+            "ticker_rel_sector": ticker_rel_sector,
+            "options_liquidity": round(options_liquidity),
+            "risk_stop": round(risk_stop),
+            "stop_pct_abs": stop_pct,
+            "projection_15d": round(projection_15d, 1),
+            "projection_bull": round(projection_bull, 1),
+            "projection_bear": round(projection_bear, 1),
+            "projected_target": projected_target,
+            "reward_risk": round(reward_risk, 2),
+        })
+
+    overlay_rows.sort(key=lambda x: x["overlay_score"], reverse=True)
+    return overlay_rows
+
+
+if page in ("1️⃣ Command Center", "4️⃣ Single Ticker Scanner"):
+    if page == "1️⃣ Command Center":
+        st.title("🧭 Command Center")
+        st.caption("Market regime, macro pressure, and quick tactical access to the CFIS scanner.")
+    else:
+        st.title("🔍 Single Ticker Scanner")
+        st.caption("Analyze one ticker through corporate, geopolitical, capital migration, options, and emotional pressure layers.")
 
     # ── MACRO RADAR ───────────────────────────────────────────
     with st.spinner("Loading Macro Radar…"):
@@ -7854,6 +8823,34 @@ if page == "1️⃣ Market Health":
             st.rerun()
 
     if not ticker_input:
+        if page == "1️⃣ Command Center":
+            st.markdown("### ⚡ Tactical Snapshot")
+            try:
+                quick_rows = scan_radar(RADAR_UNIVERSE)[:5]
+            except Exception:
+                quick_rows = []
+            if quick_rows:
+                qcols = st.columns(5)
+                for col_obj, r in zip(qcols, quick_rows):
+                    with col_obj:
+                        score_c = "#4CAF50" if r["hot_score"] >= 70 else ("#FFC107" if r["hot_score"] >= 55 else "#78909C")
+                        st.markdown(f"""
+                        <div style="background:#161b27;border-top:3px solid {score_c};border-radius:8px;padding:12px;text-align:center">
+                            <div style="font-size:18px;font-weight:900;color:#fff">{r['ticker']}</div>
+                            <div style="font-size:30px;font-weight:900;color:{score_c}">{r['hot_score']}</div>
+                            <div style="font-size:10px;color:#8a9bb5">15D SIGNAL</div>
+                            <div style="font-size:12px;color:#c9d1d9;margin-top:4px">{r.get('confirmation',0)} confirm</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+            else:
+                st.info("Tactical snapshot temporarily unavailable. Use 2️⃣ 15-Day Up Signals for the full radar.")
+            st.divider()
+            st.markdown("### 🔎 Quick Single-Ticker Analysis")
+            st.caption("Use the search bar above, or click a standard pick below.")
+        else:
+            st.markdown("### 🔎 Single-Ticker Analysis")
+            st.caption("Use the search bar above, type any ticker, or click a standard pick below.")
+
         st.markdown("### 👁️ Louis' Standard Picks — by Theme")
         st.caption("These are Louis' pre-set conviction stocks per theme. Click any to analyze.")
 
@@ -8039,70 +9036,115 @@ if page == "1️⃣ Market Health":
         st.divider()
 
         # ── COMPUTE SCORES ────────────────────────────────────
-        scores = compute_all_scores(info, hist, inst, maj)
+        try:
+            scores = compute_all_scores(info, hist, inst, maj)
+        except Exception:
+            scores = {k: 50 for k in CATEGORIES}
 
         # ── REDDIT SOCIAL INTELLIGENCE (boosts scores) ────────
-        with st.spinner("Scanning Reddit discussions…"):
-            social = scan_reddit(ticker)
-        scores = apply_social_boosts(scores, social)
+        try:
+            with st.spinner("Scanning Reddit discussions…"):
+                social = scan_reddit(ticker)
+            scores = apply_social_boosts(scores, social)
+        except Exception:
+            social = {"mentions": 0, "sentiment": 50, "posts": [], "signal": "Unavailable"}
 
-        cfis   = cfis_composite(scores)
+        cfis   = cfis_composite(scores, info, hist)
         opp    = opportunity_score(cfis, info, hist)
-        enriched = fetch_enriched_data(ticker)
-        render_source_confidence(info, hist, inst, maj, opt_dates, social, enriched)
+        try:
+            enriched = fetch_enriched_data(ticker)
+        except Exception:
+            enriched = {"data_quality": 0, "data_sources": []}
+        try:
+            render_source_confidence(info, hist, inst, maj, opt_dates, social, enriched)
+        except Exception:
+            st.caption("Source confidence temporarily unavailable.")
 
         # ── MARKET HEALTH ASSESSMENT ───────────────────────────
-        health = compute_health_scores(scores)
-        render_market_health_scores(scores, health)
+        try:
+            health = compute_health_scores(scores)
+            render_market_health_scores(scores, health)
+        except Exception:
+            st.info("Market health module temporarily unavailable.")
 
         st.divider()
 
         # ── CAPITAL MIGRATION INTELLIGENCE (REASONING FIRST) ──
-        cm = compute_capital_migration(info, hist, ticker)
-        render_capital_migration(cm, ticker)
+        try:
+            cm = compute_capital_migration(info, hist, ticker)
+            render_capital_migration(cm, ticker)
+        except Exception:
+            cm = {"thesis": {"investment_thesis": "Capital migration module unavailable.", "risk_thesis": "", "catalyst": "", "invalidation": ""}}
+            st.info("Capital migration module temporarily unavailable.")
 
         st.divider()
 
         # ── THREE-BRAIN CONVICTION ENGINE ─────────────────────
-        conviction, decision, dec_color, dec_reason, narrative, quant_s, fund_s, cm_brain_s, cm_engine_s = render_three_brains(scores, cm, info, hist)
+        try:
+            conviction, decision, dec_color, dec_reason, narrative, quant_s, fund_s, cm_brain_s, cm_engine_s = render_three_brains(scores, cm, info, hist)
+        except Exception:
+            conviction, decision, dec_color, dec_reason, narrative, quant_s, fund_s, cm_brain_s, cm_engine_s = 50, "MONITOR", "#78909C", "", "", 50, 50, 50, 50
+            st.info("Three-brain conviction module temporarily unavailable.")
 
         st.divider()
 
         # ── CFIS HUNTER — CAPITAL FLOW PREDICTION ─────────────
-        hunter = compute_hunter(info, hist, scores, cm, enriched)
-        render_hunter(hunter, ticker, cm)
+        try:
+            hunter = compute_hunter(info, hist, scores, cm, enriched)
+            render_hunter(hunter, ticker, cm)
+        except Exception:
+            hunter = {"hunter_score": 50, "action": "MONITOR", "action_color": "#78909C", "action_icon": "•", "action_desc": "Hunter module unavailable.", "conviction": {"score": 50}}
+            st.info("Hunter module temporarily unavailable.")
 
         st.divider()
 
         # ── CAPITAL FLOW INTELLIGENCE ─────────────────────────
-        with st.spinner("Running Capital Flow Intelligence…"):
-            ci = compute_capital_intelligence(ticker, info, hist, scores, cm, hunter)
-            render_capital_intelligence(ci, ticker, hunter)
+        try:
+            with st.spinner("Running Capital Flow Intelligence…"):
+                ci = compute_capital_intelligence(ticker, info, hist, scores, cm, hunter)
+                render_capital_intelligence(ci, ticker, hunter)
+        except Exception:
+            st.info("Capital Flow Intelligence temporarily unavailable.")
 
         st.divider()
 
         # ── LOUIS ACTION SIGNAL ───────────────────────────────
-        render_louis_action_signal(ticker, cm, conviction, decision, dec_color, narrative, quant_s, fund_s, cm_brain_s, cm_engine_s)
+        try:
+            render_louis_action_signal(ticker, cm, conviction, decision, dec_color, narrative, quant_s, fund_s, cm_brain_s, cm_engine_s)
+        except Exception:
+            st.info("Louis action signal temporarily unavailable.")
 
         st.divider()
 
         # ── OPTIONS ANALYSIS ──────────────────────────────────
-        render_options(opts_calls, opts_puts, opt_dates, info, ticker)
+        try:
+            render_options(opts_calls, opts_puts, opt_dates, info, ticker)
+        except Exception:
+            st.info("Options module temporarily unavailable.")
 
         st.divider()
 
         # ── DARK POOL ANALYSIS ────────────────────────────────
-        render_dark_pool(info, hist)
+        try:
+            render_dark_pool(info, hist)
+        except Exception:
+            st.info("Dark pool module temporarily unavailable.")
 
         st.divider()
 
         # ── INSTITUTIONAL ACCUMULATION ────────────────────────
-        render_institutional(info, inst, maj)
+        try:
+            render_institutional(info, inst, maj)
+        except Exception:
+            st.info("Institutional module temporarily unavailable.")
 
         st.divider()
 
         # ── REDDIT SOCIAL INTELLIGENCE ────────────────────────
-        render_social_intelligence(social, ticker)
+        try:
+            render_social_intelligence(social, ticker)
+        except Exception:
+            st.info("Social intelligence module temporarily unavailable.")
 
         st.divider()
 
@@ -8191,7 +9233,394 @@ if page == "1️⃣ Market Health":
 
 
 # ═══════════════════════════════════════════════════════════════
-# TOP 30 PAGE
+# 15-DAY UP SIGNALS / PATTERN MEMORY / MACRO CHESSBOARD
+# ═══════════════════════════════════════════════════════════════
+elif page == "2️⃣ 15-Day Up Signals":
+    st.title("📈 15-Day Up Signals")
+    st.caption("Short-term capital-flow radar weighted by corporate performance, capital migration, timing, geopolitics, global synergy, options, and emotion.")
+
+    st.markdown("""
+    <div style="background:#111827;border:1px solid #2e3550;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:12px;color:#c9d1d9;line-height:1.8">
+        <strong style="color:#4CAF50">Model:</strong>
+        Capital Migration 30% · Timing 25% · Corporate Performance 20% · Geopolitical 10% · Global Synergy 7% · Options 5% · Emotion 3%.
+        The goal is not to find the safest company. The goal is to detect where capital may move within roughly 15 trading days.
+    </div>
+    """, unsafe_allow_html=True)
+
+    if st.button("↻ Refresh 15-Day Scan", key="scan_15d_up", type="primary", use_container_width=True):
+        scan_radar.clear()
+
+    with st.spinner("Scanning 15-day capital-flow signals…"):
+        try:
+            radar_rows = scan_radar(RADAR_UNIVERSE)
+        except Exception as e:
+            st.error(f"15-day scan failed: {e}")
+            radar_rows = []
+
+    if radar_rows:
+        top = radar_rows[:20]
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Scanned", len(radar_rows))
+        c2.metric("Top Signal", f"{top[0]['ticker']} {top[0]['hot_score']}")
+        c3.metric("Avg Confirm", f"{sum(r.get('confirmation', 0) for r in top[:10]) / min(len(top), 10):.0f}")
+        c4.metric("Confirmed 75+", sum(1 for r in radar_rows if r.get("confirmation", 0) >= 75))
+
+        for i, r in enumerate(top, 1):
+            score_c = "#4CAF50" if r["hot_score"] >= 70 else ("#FFC107" if r["hot_score"] >= 55 else "#78909C")
+            confirm = r.get("confirmation", 0)
+            confirm_c = "#4CAF50" if confirm >= 75 else ("#FFC107" if confirm >= 60 else ("#78909C" if confirm >= 45 else "#ef5350"))
+            mom_c = "#4CAF50" if r["ret_15"] >= 0 else "#f44336"
+            tags = " · ".join(r["tags"][:5]) if r["tags"] else "Monitoring"
+            if r["hot_score"] >= 78 and confirm >= 75:
+                action = "ATTACK"
+            elif r["hot_score"] >= 78 and confirm >= 60:
+                action = "PILOT"
+            elif r["hot_score"] >= 65 and confirm >= 60:
+                action = "PILOT"
+            elif r["hot_score"] >= 55 or confirm >= 45:
+                action = "WATCH"
+            else:
+                action = "MONITOR"
+            st.markdown(f"""
+                <div style="background:#161b27;border-left:4px solid {score_c};border-radius:10px;padding:14px 16px;margin-bottom:8px">
+                    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+                        <div style="min-width:34px;font-size:20px;font-weight:900;color:{score_c}">#{i}</div>
+                        <div style="min-width:72px">
+                            <div style="font-size:20px;font-weight:900;color:#fff">{r['ticker']}</div>
+                            <div style="font-size:10px;color:#8a9bb5">${r['price']:.2f}</div>
+                        </div>
+                        <div style="min-width:72px;text-align:center">
+                            <div style="font-size:30px;font-weight:900;color:{score_c}">{r['hot_score']}</div>
+                            <div style="font-size:9px;color:#8a9bb5">15D SIGNAL</div>
+                        </div>
+                        <div style="min-width:78px;text-align:center">
+                            <div style="font-size:30px;font-weight:900;color:{confirm_c}">{confirm}</div>
+                            <div style="font-size:9px;color:#8a9bb5">CONFIRM</div>
+                        </div>
+                        <div style="min-width:70px;text-align:center"><div style="font-size:15px;font-weight:800;color:{mom_c}">{r['ret_15']:+.1f}%</div><div style="font-size:9px;color:#8a9bb5">15D MOM</div></div>
+                        <div style="min-width:70px;text-align:center"><div style="font-size:15px;font-weight:800;color:{confirm_c}">{r.get('confirm_label','EARLY')}</div><div style="font-size:9px;color:#8a9bb5">SETUP</div></div>
+                        <div style="min-width:70px;text-align:center"><div style="font-size:15px;font-weight:800;color:#66BB6A">{r['capital_migration']}</div><div style="font-size:9px;color:#8a9bb5">CAP FLOW</div></div>
+                        <div style="min-width:70px;text-align:center"><div style="font-size:15px;font-weight:800;color:#4FC3F7">{r['corporate']}</div><div style="font-size:9px;color:#8a9bb5">CORP</div></div>
+                        <div style="min-width:70px;text-align:center"><div style="font-size:15px;font-weight:800;color:#FFB74D">{r['geopolitical']}</div><div style="font-size:9px;color:#8a9bb5">GEO</div></div>
+                        <div style="min-width:70px;text-align:center"><div style="font-size:15px;font-weight:800;color:#AB47BC">{r['global_synergy']}</div><div style="font-size:9px;color:#8a9bb5">SYNERGY</div></div>
+                        <div style="flex:1;text-align:right"><span style="background:{score_c};color:#000;border-radius:999px;padding:5px 12px;font-size:11px;font-weight:900">{action}</span></div>
+                    </div>
+                    <div style="margin-top:8px;font-size:11px;color:#8a9bb5;line-height:1.6">{tags}</div>
+                    <div style="margin-top:4px;font-size:11px;color:#8a9bb5;line-height:1.6">Confirm checks: {r.get('up_days_10', 0)}/10 up-days · {r.get('dist_20', 0):+.1f}% vs 20D avg · volume {r.get('vol_spike', 1):.1f}x</div>
+                    <div style="margin-top:6px;font-size:12px;color:#c9d1d9;line-height:1.6">{r['reason']}</div>
+                </div>
+                """, unsafe_allow_html=True)
+    else:
+        st.warning("No 15-day signal rows returned. This usually means Yahoo/options data timed out. Hit refresh or try again in a minute.")
+
+
+elif page == "5️⃣ Pattern Memory":
+    st.title("🧠 Pattern Memory")
+    st.caption("Compare current candidates against the Intel, Micron, Marvell style capital-rotation patterns.")
+
+    patterns = [
+        ("Intel Pattern", "Strategic turnaround + national policy support + under-owned semiconductor exposure", ["INTC", "MU", "MRVL", "AMD", "QCOM"]),
+        ("Micron Pattern", "Memory cycle recovery + AI infrastructure demand + semiconductor ETF rotation", ["MU", "MRVL", "LRCX", "AMAT", "KLAC"]),
+        ("Marvell Pattern", "AI infrastructure supplier + improving narrative + hidden data-center leverage", ["MRVL", "ANET", "AVGO", "VRT", "DELL"]),
+        ("Policy-Supported National Champion", "Government pressure creates forced capital attention", ["INTC", "LMT", "CCJ", "MP", "FSLR"]),
+        ("Capital Rotation Breakout", "Ticker outperforms sector while sector outperforms SPY", ["MU", "MRVL", "VRT", "CEG", "RKLB"]),
+    ]
+
+    with st.spinner("Checking current pattern candidates…"):
+        rows = scan_radar(sorted(set(t for _, _, tickers in patterns for t in tickers)))
+
+    row_map = {r["ticker"]: r for r in rows}
+    for name, thesis, tickers in patterns:
+        matches = []
+        for t in tickers:
+            r = row_map.get(t)
+            if not r:
+                continue
+            match = clamp(r["hot_score"] * 0.50 + r["capital_migration"] * 0.25 + r["global_synergy"] * 0.15 + r["geopolitical"] * 0.10)
+            matches.append((match, r))
+        matches.sort(key=lambda x: x[0], reverse=True)
+        with st.expander(f"{name} — {thesis}", expanded=name in ("Micron Pattern", "Marvell Pattern")):
+            if not matches:
+                st.info("No current data for this pattern set.")
+            for match, r in matches:
+                m_c = "#4CAF50" if match >= 75 else ("#FFC107" if match >= 60 else "#78909C")
+                st.markdown(f"""
+                <div style="display:flex;align-items:center;gap:12px;background:#161b27;border-left:4px solid {m_c};border-radius:8px;padding:10px 12px;margin:6px 0">
+                    <div style="min-width:70px;font-size:18px;font-weight:900;color:#fff">{r['ticker']}</div>
+                    <div style="min-width:64px;text-align:center"><div style="font-size:22px;font-weight:900;color:{m_c}">{match}</div><div style="font-size:9px;color:#8a9bb5">MATCH</div></div>
+                    <div style="min-width:64px;text-align:center"><div style="font-size:15px;font-weight:800;color:#66BB6A">{r['hot_score']}</div><div style="font-size:9px;color:#8a9bb5">15D</div></div>
+                    <div style="min-width:64px;text-align:center"><div style="font-size:15px;font-weight:800;color:#4FC3F7">{r['capital_migration']}</div><div style="font-size:9px;color:#8a9bb5">FLOW</div></div>
+                    <div style="flex:1;font-size:12px;color:#c9d1d9">{r['reason']}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+
+elif page == "6️⃣ Macro Chessboard":
+    st.title("♟️ Macro Chessboard")
+    st.caption("Central bank, liquidity, rate, commodity, risk, and crowd-pressure board.")
+    with st.spinner("Loading macro chessboard…"):
+        try:
+            macro = fetch_macro_radar()
+            render_macro_radar(macro)
+        except Exception:
+            st.info("Macro data temporarily unavailable.")
+
+    st.divider()
+    with st.spinner("Scanning macro social pressure…"):
+        try:
+            social_macro = scan_reddit_macro()
+        except Exception:
+            social_macro = None
+    if social_macro:
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Macro Mentions", social_macro.get("total", 0))
+        c2.metric("BOJ/Yen", social_macro.get("boj_mentions", 0) + social_macro.get("carry_mentions", 0))
+        c3.metric("Leverage Risk", social_macro.get("leverage_mentions", 0))
+        c4.metric("Fed Mentions", social_macro.get("fed_mentions", 0))
+        if social_macro.get("themes"):
+            st.markdown("#### Active Macro Themes")
+            for theme in social_macro["themes"]:
+                st.markdown(f"- {theme}")
+        if social_macro.get("top_posts"):
+            with st.expander("Recent macro pressure posts", expanded=False):
+                for p in social_macro["top_posts"][:10]:
+                    st.markdown(f"**r/{p['sub']}** · {p['title']}")
+
+
+elif page == "7️⃣ Bridgewater/Aladdin Overlay":
+    st.title("🏛️ Bridgewater/Aladdin Overlay")
+    st.caption("Institutional filter on top of the 15-day radar: signal, confirmation, macro, ETF rotation, sector strength, options liquidity proxy, and risk stop zone.")
+
+    st.markdown("""
+    <div style="background:#111827;border:1px solid #2e3550;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:12px;color:#c9d1d9;line-height:1.8">
+        <strong style="color:#4FC3F7">Overlay:</strong>
+        15D Signal 24% · Confirmation 22% · Macro Regime 14% · ETF Flow Proxy 14% · Sector Relative Strength 10% · Options Liquidity Proxy 8% · Risk Stop Zone 8%.
+        This is not a clone of Aladdin or Bridgewater. It is a local CFIS institutional-style decision layer for short-term stock hunting.
+    </div>
+    """, unsafe_allow_html=True)
+
+    if st.button("↻ Refresh Overlay", key="refresh_overlay", type="primary", use_container_width=True):
+        scan_radar.clear()
+        build_institutional_overlay.clear()
+
+    with st.spinner("Building institutional overlay…"):
+        try:
+            overlay_rows = build_institutional_overlay(tuple(RADAR_UNIVERSE))
+        except Exception as e:
+            st.error(f"Overlay failed: {e}")
+            overlay_rows = []
+
+    if overlay_rows:
+        top = overlay_rows[:20]
+        macro_label = top[0].get("macro_label", "UNKNOWN")
+        macro_desc = top[0].get("macro_desc", "")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Macro Regime", macro_label)
+        c2.metric("Top Overlay", f"{top[0]['ticker']} {top[0]['overlay_score']}")
+        c3.metric("Avg 15D Proj", f"{sum(r.get('projection_15d', 0) for r in top[:10]) / min(len(top), 10):+.1f}%")
+        c4.metric("Attack 82+", sum(1 for r in overlay_rows if r["overlay_score"] >= 82))
+        st.caption(macro_desc)
+
+        for i, r in enumerate(top, 1):
+            overlay_c = "#4CAF50" if r["overlay_score"] >= 82 else ("#FFC107" if r["overlay_score"] >= 72 else ("#78909C" if r["overlay_score"] >= 62 else "#ef5350"))
+            confirm_c = "#4CAF50" if r.get("confirmation", 0) >= 75 else ("#FFC107" if r.get("confirmation", 0) >= 60 else "#78909C")
+            mom_c = "#4CAF50" if r.get("ret_15", 0) >= 0 else "#f44336"
+            proj_c = "#4CAF50" if r.get("projection_15d", 0) >= 5 else ("#FFC107" if r.get("projection_15d", 0) >= 1 else "#ef5350")
+            stop_text = f"${r.get('stop_price', 0):.2f} ({-r.get('stop_pct_abs', 0):.1f}%)"
+            target_text = f"{r.get('projection_15d', 0):+.1f}% / ${r.get('projected_target', 0):.2f}"
+            st.markdown(f"""
+                <div style="background:#161b27;border-left:4px solid {overlay_c};border-radius:10px;padding:14px 16px;margin-bottom:9px">
+                    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+                        <div style="min-width:34px;font-size:20px;font-weight:900;color:{overlay_c}">#{i}</div>
+                        <div style="min-width:84px">
+                            <div style="font-size:20px;font-weight:900;color:#fff">{r['ticker']}</div>
+                            <div style="font-size:10px;color:#8a9bb5">${r['price']:.2f} · {r['overlay_sector']}</div>
+                        </div>
+                        <div style="min-width:78px;text-align:center">
+                            <div style="font-size:31px;font-weight:900;color:{overlay_c}">{r['overlay_score']}</div>
+                            <div style="font-size:9px;color:#8a9bb5">OVERLAY</div>
+                        </div>
+                        <div style="min-width:72px;text-align:center"><div style="font-size:17px;font-weight:900;color:{mom_c}">{r['hot_score']}</div><div style="font-size:9px;color:#8a9bb5">15D</div></div>
+                        <div style="min-width:78px;text-align:center"><div style="font-size:17px;font-weight:900;color:{confirm_c}">{r.get('confirmation',0)}</div><div style="font-size:9px;color:#8a9bb5">CONFIRM</div></div>
+                        <div style="min-width:92px;text-align:center"><div style="font-size:17px;font-weight:900;color:{proj_c}">{target_text}</div><div style="font-size:9px;color:#8a9bb5">15D PROJ</div></div>
+                        <div style="min-width:70px;text-align:center"><div style="font-size:17px;font-weight:900;color:#4FC3F7">{r['macro_score']}</div><div style="font-size:9px;color:#8a9bb5">MACRO</div></div>
+                        <div style="min-width:70px;text-align:center"><div style="font-size:17px;font-weight:900;color:#66BB6A">{r['etf_flow']}</div><div style="font-size:9px;color:#8a9bb5">{r['sector_etf']} FLOW</div></div>
+                        <div style="min-width:70px;text-align:center"><div style="font-size:17px;font-weight:900;color:{'#4CAF50' if r['ticker_rel_spy'] >= 0 else '#ef5350'}">{r['ticker_rel_spy']:+.1f}%</div><div style="font-size:9px;color:#8a9bb5">TICKER VS SPY</div></div>
+                        <div style="min-width:70px;text-align:center"><div style="font-size:17px;font-weight:900;color:{'#4CAF50' if r['sector_rel'] >= 0 else '#ef5350'}">{r['sector_rel']:+.1f}%</div><div style="font-size:9px;color:#8a9bb5">{r['sector_etf']} VS SPY</div></div>
+                        <div style="min-width:70px;text-align:center"><div style="font-size:17px;font-weight:900;color:#AB47BC">{r['options_liquidity']}</div><div style="font-size:9px;color:#8a9bb5">OPT LIQ</div></div>
+                        <div style="min-width:88px;text-align:center"><div style="font-size:14px;font-weight:900;color:#FFB74D">{stop_text}</div><div style="font-size:9px;color:#8a9bb5">STOP ZONE</div></div>
+                        <div style="min-width:70px;text-align:center"><div style="font-size:14px;font-weight:900;color:{proj_c}">{r.get('reward_risk', 0):.2f}x</div><div style="font-size:9px;color:#8a9bb5">R/R</div></div>
+                        <div style="flex:1;text-align:right"><span style="background:{overlay_c};color:#000;border-radius:999px;padding:5px 12px;font-size:11px;font-weight:900">{r['overlay_action']}</span></div>
+                    </div>
+                    <div style="margin-top:8px;font-size:11px;color:#8a9bb5;line-height:1.6">
+                        Projection range: {r.get('projection_bear', 0):+.1f}% to {r.get('projection_bull', 0):+.1f}% · Confirm checks: {r.get('up_days_10', 0)}/10 up-days · {r.get('dist_20', 0):+.1f}% vs 20D avg · volume {r.get('vol_spike', 1):.1f}x · dollar volume proxy ${r.get('dollar_vol', 0)/1_000_000:.0f}M
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+
+        st.divider()
+        table_rows = [{
+            "Ticker": r["ticker"],
+            "Overlay": r["overlay_score"],
+            "Action": r["overlay_action"],
+            "15D": r["hot_score"],
+            "Confirm": r.get("confirmation", 0),
+            "15D Projection %": r.get("projection_15d", 0),
+            "Projected Target": round(r.get("projected_target", 0), 2),
+            "Projection Range": f"{r.get('projection_bear', 0):+.1f}% to {r.get('projection_bull', 0):+.1f}%",
+            "Reward/Risk": r.get("reward_risk", 0),
+            "Macro": r["macro_score"],
+            "ETF Flow": r["etf_flow"],
+            "Ticker vs SPY": round(r["ticker_rel_spy"], 1),
+            "Ticker vs Sector": round(r["ticker_rel_sector"], 1),
+            "Sector ETF vs SPY": round(r["sector_rel"], 1),
+            "Opt Liq": r["options_liquidity"],
+            "Stop": round(r.get("stop_price", 0), 2),
+            "Stop %": round(-r.get("stop_pct_abs", 0), 1),
+            "ETF": r["sector_etf"],
+            "Sector": r["overlay_sector"],
+        } for r in top]
+        st.dataframe(pd.DataFrame(table_rows), use_container_width=True, hide_index=True)
+    else:
+        st.warning("No overlay rows returned. Try refresh in a minute.")
+
+
+elif page == "8️⃣ A-Level Upgrade Roadmap":
+    st.title("🧬 A-Level Upgrade Roadmap")
+    st.caption("What CFIS-X Lite still needs before I would call it A-level: data gaps, build order, and confidence calibration.")
+
+    st.markdown("""
+    <div style="background:#111827;border:1px solid #2e3550;border-radius:10px;padding:14px 18px;margin-bottom:14px;font-size:12px;color:#c9d1d9;line-height:1.8">
+        <strong style="color:#4FC3F7">Current rating:</strong> B / B+ local MVP.
+        The system now has a strong workflow: 15D Heat → Institutional Overlay → 60D Options.
+        To become A-level, the next work is not more pages. It is better evidence, backtesting, and calibration.
+    </div>
+    """, unsafe_allow_html=True)
+
+    score_cols = st.columns(4)
+    score_cols[0].metric("Current CFIS", "78/100", "B / B+")
+    score_cols[1].metric("A-Level Target", "90/100", "+12 pts")
+    score_cols[2].metric("Biggest Gap", "Real Flow", "options + ETF")
+    score_cols[3].metric("Next Build", "Backtest", "15D outcomes")
+
+    st.divider()
+
+    upgrade_items = [
+        {
+            "name": "Real options chain liquidity and IV",
+            "status": "Proxy now",
+            "priority": "P1",
+            "impact": "+4 pts",
+            "why": "Options conviction should know open interest, bid/ask spread, volume, IV rank, skew, and realistic contract liquidity.",
+            "source": "yfinance option_chain for focused tickers first; later Polygon / Tradier / ORATS if available.",
+            "build": "Only inspect options for top 20 overlay names, not the full universe. Add IV, spread %, OI, volume, and nearest 30-60 DTE contract quality.",
+        },
+        {
+            "name": "Actual ETF flow data, not proxy",
+            "status": "Proxy now",
+            "priority": "P1",
+            "impact": "+3 pts",
+            "why": "Sector ETF price strength is useful, but real fund inflow/outflow tells whether capital is actually migrating into the basket.",
+            "source": "ETF.com / VettaFi / FMP ETF holdings/flows if accessible; otherwise daily ETF AUM proxy.",
+            "build": "Add ETF flow column: 1D, 5D, 20D flow trend and whether ticker is a major ETF holding.",
+        },
+        {
+            "name": "Sector-relative charts",
+            "status": "Partial",
+            "priority": "P2",
+            "impact": "+2 pts",
+            "why": "A ticker outperforming SPY is good; outperforming its own sector is stronger. A chart makes this visible immediately.",
+            "source": "Yahoo price data already available.",
+            "build": "Add mini relative-strength chart: ticker/SPY and ticker/sector ETF over 30/60/90 days.",
+        },
+        {
+            "name": "News and catalyst velocity",
+            "status": "Weak",
+            "priority": "P1",
+            "impact": "+4 pts",
+            "why": "Short-term moves often come from fresh catalysts. The system needs to know whether news is accelerating or stale.",
+            "source": "FMP news, Finnhub news, Yahoo headlines, Reddit/social scanner.",
+            "build": "Score headline count, recency, catalyst category, sentiment, and whether the story is new within 72 hours.",
+        },
+        {
+            "name": "Earnings and date risk",
+            "status": "Missing",
+            "priority": "P1",
+            "impact": "+3 pts",
+            "why": "Options near earnings can explode or die from IV crush. A 60-day options signal must know the earnings date.",
+            "source": "yfinance calendar, Nasdaq earnings calendar, FMP calendar.",
+            "build": "Show next earnings date, days to event, IV-crush warning, and whether the option target expiry crosses earnings.",
+        },
+        {
+            "name": "Backtesting against past 15D outcomes",
+            "status": "Missing",
+            "priority": "P0",
+            "impact": "+6 pts",
+            "why": "This is the largest upgrade. Without backtesting, confidence is opinion. With backtesting, confidence becomes evidence.",
+            "source": "Historical Yahoo candles. No paid data required for first version.",
+            "build": "Re-run the 15D formula historically, record forward 5/10/15D returns, hit rate, average win/loss, max drawdown, and best threshold.",
+        },
+        {
+            "name": "Position sizing and invalidation rules",
+            "status": "Partial",
+            "priority": "P1",
+            "impact": "+3 pts",
+            "why": "A good signal still needs trade sizing. Risk should be linked to stop zone, conviction, liquidity, and account risk.",
+            "source": "Existing stop zone, option liquidity, confidence scores.",
+            "build": "Add suggested risk tier: Probe, Pilot, Normal, Avoid. Add invalidation price and max loss guide.",
+        },
+        {
+            "name": "Cleaner confidence calibration",
+            "status": "Early",
+            "priority": "P0",
+            "impact": "+5 pts",
+            "why": "A score of 80 should mean something measurable, like historical 15D hit rate and expected return band.",
+            "source": "Backtest result table generated locally.",
+            "build": "Map score ranges to actual historical outcomes: 60-70, 70-80, 80-90, 90-100. Adjust weights based on hit rate.",
+        },
+    ]
+
+    priority_rank = {"P0": 0, "P1": 1, "P2": 2}
+    for item in sorted(upgrade_items, key=lambda x: priority_rank.get(x["priority"], 9)):
+        p_color = "#f44336" if item["priority"] == "P0" else ("#FFC107" if item["priority"] == "P1" else "#4FC3F7")
+        status_color = "#4CAF50" if item["status"] == "Partial" else ("#FFC107" if item["status"] in ("Proxy now", "Early") else "#ef5350")
+        st.markdown(f"""
+        <div style="background:#161b27;border-left:4px solid {p_color};border-radius:10px;padding:14px 16px;margin-bottom:10px">
+            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+                <div style="min-width:46px;text-align:center;background:{p_color};color:#000;border-radius:999px;padding:4px 10px;font-size:11px;font-weight:900">{item['priority']}</div>
+                <div style="flex:1;font-size:16px;font-weight:900;color:#fff">{item['name']}</div>
+                <div style="font-size:11px;font-weight:800;color:{status_color}">{item['status']}</div>
+                <div style="font-size:11px;font-weight:800;color:#66BB6A">{item['impact']}</div>
+            </div>
+            <div style="margin-top:8px;font-size:12px;color:#c9d1d9;line-height:1.7"><b>Why:</b> {item['why']}</div>
+            <div style="margin-top:6px;font-size:11px;color:#8a9bb5;line-height:1.7"><b>Data:</b> {item['source']}</div>
+            <div style="margin-top:6px;font-size:11px;color:#8a9bb5;line-height:1.7"><b>Build:</b> {item['build']}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.divider()
+    st.subheader("My Suggested Build Order")
+    st.markdown("""
+    1. **Backtest 15D outcomes first** — because it tells us whether the score is real or just beautiful.
+    2. **Calibrate confidence bands** — make `80` mean a measured historical hit rate.
+    3. **Add earnings/date risk to 60D options** — removes many bad option trades quickly.
+    4. **Add real option chain quality for top 20 only** — IV, spread, OI, volume, contract quality.
+    5. **Add news/catalyst velocity** — detect whether the move has a fresh reason.
+    6. **Add position sizing/invalidation** — turn signal into an executable decision.
+    7. **Add real ETF flows when data access is ready** — replace proxy with institutional evidence.
+    """)
+
+    st.markdown("""
+    <div style="background:#0d1117;border:1px solid #21262d;border-radius:10px;padding:14px 16px;margin-top:12px;font-size:12px;color:#c9d1d9;line-height:1.8">
+        <strong style="color:#FFC107">Recommendation:</strong>
+        Build the backtester next. It is the highest-leverage upgrade because it will tell us which components actually predict the next 15 days,
+        which thresholds are too aggressive, and whether Sidebar 2 or Sidebar 7 is more reliable.
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# ═══════════════════════════════════════════════════════════════
+# LEGACY / HIDDEN PAGES
 # ═══════════════════════════════════════════════════════════════
 elif page == "2️⃣ Capital Migration":
     st.title("🌊 Capital Migration™")
@@ -9957,13 +11386,13 @@ elif page == "6️⃣ Hunter Command by Louis Teo":
 # ═══════════════════════════════════════════════════════════════
 # PAGE 7 — OPTIONS INTELLIGENCE by Louis Teo
 # ═══════════════════════════════════════════════════════════════
-elif page == "7️⃣ Options Intelligence by Louis Teo":
+elif page == "3️⃣ 60-Day Options":
 
     st.markdown("""
     <div style="margin-bottom:8px">
-        <span style="font-size:32px;font-weight:900;color:#ffffff">🎯 Options Intelligence</span>
-        <span style="font-size:14px;color:#7c3aed;font-weight:700;margin-left:8px">by Louis Teo</span><br>
-        <span style="font-size:15px;color:#b0bcd4">Trend-based CALL & PUT setups — powered by 18 theories + Smart Money + Fear & Greed</span>
+            <span style="font-size:32px;font-weight:900;color:#ffffff">🎯 60-Day Options</span>
+            <span style="font-size:14px;color:#7c3aed;font-weight:700;margin-left:8px">CALL / PUT Signal Engine</span><br>
+            <span style="font-size:15px;color:#b0bcd4">Directional setups for roughly 30-60 DTE — trend, capital migration, liquidity, volatility, catalyst, and risk</span>
     </div>
     """, unsafe_allow_html=True)
 
@@ -9983,15 +11412,15 @@ elif page == "7️⃣ Options Intelligence by Louis Teo":
         st.markdown("""
         <div style="font-size:12px;color:#c9d1d9;line-height:2.0">
             <strong style="color:#7c3aed">Data Sources:</strong> S&P 500 + high-liquidity growth stocks (~200 tickers)<br>
-            <strong style="color:#7c3aed">Trend Detection:</strong> 15-day & 30-day momentum, SMA crossovers, volume surge<br>
-            <strong style="color:#7c3aed">Smart Money:</strong> Dark pool activity, options flow, short interest, ETF rotation<br>
-            <strong style="color:#7c3aed">Greed Factor:</strong> CNN Fear & Greed Index — market sentiment overlay<br>
-            <strong style="color:#7c3aed">RSI Filter:</strong> Avoids overbought (CALL) and oversold (PUT) traps<br><br>
-            <strong style="color:#4CAF50">CALL Setup</strong> = Strong uptrend + Smart Money accumulation + healthy RSI + greed<br>
-            <strong style="color:#f44336">PUT Setup</strong> = Strong downtrend + Smart Money distribution + fear + breakdown momentum<br><br>
-            <strong style="color:#FF9800">Entry Window:</strong> 1–5 day range based on trend strength (not an exact date)<br>
-            <strong style="color:#FF9800">Strike Hint:</strong> ATM or 1–2 strikes OTM for optimal risk/reward<br>
-            <strong style="color:#FF9800">Conviction:</strong> 0–100 score combining trend + smart money + sentiment + RSI + volume
+                <strong style="color:#7c3aed">Directional Setup:</strong> 15-day & 30-day momentum, SMA crossovers, volume surge<br>
+                <strong style="color:#7c3aed">Capital Migration:</strong> Smart Money pressure, options flow, short interest, ETF rotation<br>
+                <strong style="color:#7c3aed">Greed Factor:</strong> CNN Fear & Greed Index — market sentiment overlay<br>
+                <strong style="color:#7c3aed">RSI Filter:</strong> Avoids overbought (CALL) and oversold (PUT) traps<br><br>
+                <strong style="color:#4CAF50">CALL Setup</strong> = Strong uptrend + Smart Money accumulation + healthy RSI + greed<br>
+                <strong style="color:#f44336">PUT Setup</strong> = Strong downtrend + Smart Money distribution + fear + breakdown momentum<br><br>
+                <strong style="color:#FF9800">Entry Window:</strong> 1–5 day range based on trend strength (not an exact date)<br>
+                <strong style="color:#FF9800">Strike Hint:</strong> ATM or 1–2 strikes OTM for cleaner risk/reward<br>
+                <strong style="color:#FF9800">Conviction:</strong> 0–100 score combining direction, smart money, sentiment, RSI, volume, and 60-day practicality
         </div>
         """, unsafe_allow_html=True)
 
@@ -9999,9 +11428,9 @@ elif page == "7️⃣ Options Intelligence by Louis Teo":
         st.session_state["opt_intel_triggered"] = True
 
     if not st.session_state.get("opt_intel_triggered"):
-        st.info("Click the button above to scan ~200 stocks for options setups. This takes about 60–90 seconds.")
+        st.info("Click the button above to scan high-liquidity stocks for 30-60 DTE options setups. The fast scan usually loads in seconds.")
     else:
-        with st.spinner("Scanning ~200 stocks for trend strength + Smart Money signals… This may take 60–90 seconds."):
+        with st.spinner("Scanning trend, liquidity, projection, and 30-60 DTE option proxies…"):
             try:
                 signals = generate_options_signals(tuple(SP500_LIQUID))
             except Exception as e:
@@ -10129,13 +11558,21 @@ elif page == "7️⃣ Options Intelligence by Louis Teo":
                                 <div style="font-size:9px;color:#8a9bb5;letter-spacing:1px">ENTRY WINDOW</div>
                                 <div style="font-size:13px;font-weight:700;color:#FFC107">{setup['entry_window']}</div>
                             </div>
-                            <div style="background:#0d1117;border-radius:8px;padding:8px 14px">
-                                <div style="font-size:9px;color:#8a9bb5;letter-spacing:1px">STRIKE HINT</div>
-                                <div style="font-size:13px;font-weight:700;color:#c9d1d9">{setup['strike_hint']}</div>
-                            </div>
-                            <div style="background:#0d1117;border-radius:8px;padding:8px 14px">
-                                <div style="font-size:9px;color:#8a9bb5;letter-spacing:1px">30D MOMENTUM</div>
-                                <div style="font-size:13px;font-weight:700;color:{mom_color}">{setup['mom_30']:+.1f}%</div>
+                                <div style="background:#0d1117;border-radius:8px;padding:8px 14px">
+                                    <div style="font-size:9px;color:#8a9bb5;letter-spacing:1px">STRIKE HINT</div>
+                                    <div style="font-size:13px;font-weight:700;color:#c9d1d9">{setup['strike_hint']}</div>
+                                </div>
+                                <div style="background:#0d1117;border-radius:8px;padding:8px 14px">
+                                    <div style="font-size:9px;color:#8a9bb5;letter-spacing:1px">TARGET EXPIRY</div>
+                                    <div style="font-size:13px;font-weight:700;color:#c9d1d9">{setup.get('expiry_hint','30-60 DTE')}</div>
+                                </div>
+                                <div style="background:#0d1117;border-radius:8px;padding:8px 14px">
+                                    <div style="font-size:9px;color:#8a9bb5;letter-spacing:1px">OPT LIQUIDITY</div>
+                                    <div style="font-size:13px;font-weight:700;color:{'#4CAF50' if setup.get('option_liquidity',50) >= 70 else '#FFC107'}">{setup.get('option_liquidity',50)}</div>
+                                </div>
+                                <div style="background:#0d1117;border-radius:8px;padding:8px 14px">
+                                    <div style="font-size:9px;color:#8a9bb5;letter-spacing:1px">30D MOMENTUM</div>
+                                    <div style="font-size:13px;font-weight:700;color:{mom_color}">{setup['mom_30']:+.1f}%</div>
                             </div>
                             <div style="background:#0d1117;border-radius:8px;padding:8px 14px">
                                 <div style="font-size:9px;color:#8a9bb5;letter-spacing:1px">VOL SURGE</div>
@@ -10217,13 +11654,21 @@ elif page == "7️⃣ Options Intelligence by Louis Teo":
                                 <div style="font-size:9px;color:#8a9bb5;letter-spacing:1px">ENTRY WINDOW</div>
                                 <div style="font-size:13px;font-weight:700;color:#FFC107">{setup['entry_window']}</div>
                             </div>
-                            <div style="background:#0d1117;border-radius:8px;padding:8px 14px">
-                                <div style="font-size:9px;color:#8a9bb5;letter-spacing:1px">STRIKE HINT</div>
-                                <div style="font-size:13px;font-weight:700;color:#c9d1d9">{setup['strike_hint']}</div>
-                            </div>
-                            <div style="background:#0d1117;border-radius:8px;padding:8px 14px">
-                                <div style="font-size:9px;color:#8a9bb5;letter-spacing:1px">30D MOMENTUM</div>
-                                <div style="font-size:13px;font-weight:700;color:{mom_color}">{setup['mom_30']:+.1f}%</div>
+                                <div style="background:#0d1117;border-radius:8px;padding:8px 14px">
+                                    <div style="font-size:9px;color:#8a9bb5;letter-spacing:1px">STRIKE HINT</div>
+                                    <div style="font-size:13px;font-weight:700;color:#c9d1d9">{setup['strike_hint']}</div>
+                                </div>
+                                <div style="background:#0d1117;border-radius:8px;padding:8px 14px">
+                                    <div style="font-size:9px;color:#8a9bb5;letter-spacing:1px">TARGET EXPIRY</div>
+                                    <div style="font-size:13px;font-weight:700;color:#c9d1d9">{setup.get('expiry_hint','30-60 DTE')}</div>
+                                </div>
+                                <div style="background:#0d1117;border-radius:8px;padding:8px 14px">
+                                    <div style="font-size:9px;color:#8a9bb5;letter-spacing:1px">OPT LIQUIDITY</div>
+                                    <div style="font-size:13px;font-weight:700;color:{'#4CAF50' if setup.get('option_liquidity',50) >= 70 else '#FFC107'}">{setup.get('option_liquidity',50)}</div>
+                                </div>
+                                <div style="background:#0d1117;border-radius:8px;padding:8px 14px">
+                                    <div style="font-size:9px;color:#8a9bb5;letter-spacing:1px">30D MOMENTUM</div>
+                                    <div style="font-size:13px;font-weight:700;color:{mom_color}">{setup['mom_30']:+.1f}%</div>
                             </div>
                             <div style="background:#0d1117;border-radius:8px;padding:8px 14px">
                                 <div style="font-size:9px;color:#8a9bb5;letter-spacing:1px">VOL SURGE</div>
