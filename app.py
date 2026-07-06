@@ -6835,6 +6835,7 @@ def _build_row(t, info, hist, enriched=None):
         return None
     scores = compute_all_scores(info, hist, None, None)
     cfis = cfis_composite(scores, info, hist)
+    opp = opportunity_score(cfis, info, hist)
     cm = compute_capital_migration(info, hist, t)
     if enriched is None:
         enriched = {"data_quality": 0}
@@ -6878,6 +6879,7 @@ def _build_row(t, info, hist, enriched=None):
         "ticker": t, "name": name, "price": price,
         "theme": primary_theme, "theme_icon": td.get("icon", "📊"),
         "cfis": cfis,
+        "opportunity": opp,
         "conviction": hunter["hunter_score"],
         "signal": hunter["zone_label"],
         "signal_color": hunter["zone_color"],
@@ -7125,6 +7127,10 @@ def render_opportunity_table(rows, count=12, show_thesis=True):
             '<div style="min-width:50px;text-align:center">'
             '<div style="font-size:14px;font-weight:700;color:#e8ecf4">$' + f"{r['price']:.2f}" + '</div>'
             '<div style="font-size:9px;color:#8a9bb5">PRICE</div>'
+            '</div>'
+            '<div style="min-width:50px;text-align:center">'
+            '<div style="font-size:16px;font-weight:800;color:' + ("#4CAF50" if r.get("opportunity", 0) >= 65 else ("#FFC107" if r.get("opportunity", 0) >= 45 else "#f44336")) + '">' + f"{r.get('opportunity', 0):.0f}" + '</div>'
+            '<div style="font-size:9px;color:#8a9bb5">OPP</div>'
             '</div>'
             '<div style="min-width:50px;text-align:center">'
             '<div style="font-size:13px;font-weight:700;color:' + p15_c + '">' + f"{p15:+.1f}%" + '</div>'
