@@ -11090,8 +11090,6 @@ elif page == "8️⃣ A-Level Upgrade Roadmap":
             "source": "yfinance calendar — next earnings date, days to event.",
             "build": "Built: fetch_earnings_risk() returns days to earnings, risk level (IMMINENT/HIGH/MODERATE/LOW/CLEAR), IV crush flag. Shown on Page 2.",
         },
-            "build": "Re-run the 15D formula historically, record forward 5/10/15D returns, hit rate, average win/loss, max drawdown, and best threshold.",
-        },
         {
             "name": "Position sizing and invalidation rules",
             "status": "Partial",
