@@ -45,6 +45,61 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+st.markdown("""
+<script>
+(function() {
+    if (window.__cfis_pwa_init) return;
+    window.__cfis_pwa_init = true;
+
+    var head = document.head || document.getElementsByTagName('head')[0];
+
+    var manifest = document.createElement('link');
+    manifest.rel = 'manifest';
+    manifest.href = '/app/static/manifest.json';
+    head.appendChild(manifest);
+
+    var theme = document.createElement('meta');
+    theme.name = 'theme-color';
+    theme.content = '#080B12';
+    head.appendChild(theme);
+
+    var capable = document.createElement('meta');
+    capable.name = 'apple-mobile-web-app-capable';
+    capable.content = 'yes';
+    head.appendChild(capable);
+
+    var statusBar = document.createElement('meta');
+    statusBar.name = 'apple-mobile-web-app-status-bar-style';
+    statusBar.content = 'black-translucent';
+    head.appendChild(statusBar);
+
+    var title = document.createElement('meta');
+    title.name = 'apple-mobile-web-app-title';
+    title.content = 'CFIS-X';
+    head.appendChild(title);
+
+    var icon = document.createElement('link');
+    icon.rel = 'apple-touch-icon';
+    icon.href = '/app/static/icon-192.png';
+    head.appendChild(icon);
+
+    if ('serviceWorker' in navigator) {
+        var swCode = "self.addEventListener('fetch', function(e) { e.respondWith(fetch(e.request)); });";
+        var blob = new Blob([swCode], {type: 'application/javascript'});
+        var swUrl = URL.createObjectURL(blob);
+        navigator.serviceWorker.register(swUrl, {scope: '/'})
+            .then(function(reg) { console.log('CFIS-X PWA ready'); })
+            .catch(function(err) { console.log('SW fallback:', err); });
+    }
+
+    window.addEventListener('beforeinstallprompt', function(e) {
+        e.preventDefault();
+        window.__cfis_install = e;
+    });
+})();
+</script>
+""", unsafe_allow_html=True)
+
 # ─────────────────────────────────────────────────────────────
 # LOGIN GATE
 # ─────────────────────────────────────────────────────────────
@@ -427,6 +482,176 @@ hr { border-color: #1a2035 !important; opacity: 0.6 !important; }
     .financial-grid { grid-template-columns: 1fr; }
     .financial-card { min-height: 76px; padding: 12px 14px; }
     .financial-value { font-size: 22px; }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   CFIS DESIGN SYSTEM v1 — Type Scale, Cards, Utilities
+   5-level type scale: xs(11) sm(13) md(15) lg(18) xl(22)
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Type scale ── */
+.t-xs  { font-size: 11px !important; line-height: 1.5; }
+.t-sm  { font-size: 13px !important; line-height: 1.6; }
+.t-md  { font-size: 15px !important; line-height: 1.5; }
+.t-lg  { font-size: 18px !important; line-height: 1.4; }
+.t-xl  { font-size: 22px !important; line-height: 1.3; }
+.t-num { font-size: 28px !important; line-height: 1.1; font-weight: 900; font-variant-numeric: tabular-nums; }
+
+/* ── Font weights ── */
+.fw-4 { font-weight: 400 !important; }
+.fw-5 { font-weight: 500 !important; }
+.fw-6 { font-weight: 600 !important; }
+.fw-7 { font-weight: 700 !important; }
+.fw-8 { font-weight: 800 !important; }
+.fw-9 { font-weight: 900 !important; }
+
+/* ── Text colors ── */
+.tc-primary   { color: #f0f4fc !important; }
+.tc-secondary { color: #c9d1d9 !important; }
+.tc-muted     { color: #8a9bb5 !important; }
+.tc-dim       { color: #6a7a9a !important; }
+.tc-green     { color: #4CAF50 !important; }
+.tc-yellow    { color: #FFC107 !important; }
+.tc-red       { color: #f44336 !important; }
+.tc-orange    { color: #FF9800 !important; }
+.tc-blue      { color: #4FC3F7 !important; }
+.tc-accent    { color: #3b82f6 !important; }
+
+/* ── Cards — the 3 standard containers ── */
+.c-card {
+    background: #111827;
+    border: 1px solid #1e2a40;
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 10px;
+}
+.c-card-dark {
+    background: #0d1117;
+    border: 1px solid #21262d;
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 10px;
+}
+.c-card-accent {
+    background: #161b27;
+    border-left: 4px solid #1e2a40;
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-bottom: 8px;
+}
+.c-card-accent.border-green  { border-left-color: #4CAF50; }
+.c-card-accent.border-yellow { border-left-color: #FFC107; }
+.c-card-accent.border-red    { border-left-color: #f44336; }
+.c-card-accent.border-blue   { border-left-color: #4FC3F7; }
+.c-card-accent.border-orange { border-left-color: #FF9800; }
+.c-card-accent.border-purple { border-left-color: #7c3aed; }
+
+/* ── Signal cards (green/red highlight boxes) ── */
+.c-signal-green {
+    background: #0a2e0a;
+    border: 2px solid #4CAF50;
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 12px;
+}
+.c-signal-red {
+    background: #2e0a0a;
+    border: 2px solid #f44336;
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 12px;
+}
+.c-signal-blue {
+    background: #0a1a2e;
+    border: 2px solid #4FC3F7;
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 12px;
+}
+
+/* ── Info banner (tip/recommendation boxes) ── */
+.c-banner {
+    background: #111827;
+    border: 1px solid #2e3550;
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-bottom: 14px;
+    line-height: 1.8;
+}
+
+/* ── Layout helpers ── */
+.d-flex    { display: flex; }
+.flex-wrap { flex-wrap: wrap; }
+.gap-sm    { gap: 8px; }
+.gap-md    { gap: 14px; }
+.gap-lg    { gap: 20px; }
+.gap-xl    { gap: 28px; }
+.ai-center { align-items: center; }
+.jc-between { justify-content: space-between; }
+
+/* ── Spacing ── */
+.mt-0  { margin-top: 0 !important; }
+.mt-sm { margin-top: 6px !important; }
+.mt-md { margin-top: 12px !important; }
+.mb-0  { margin-bottom: 0 !important; }
+.mb-sm { margin-bottom: 6px !important; }
+.mb-md { margin-bottom: 12px !important; }
+
+/* ── Status pill ── */
+.pill {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 10px;
+    border-radius: 999px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+.pill-green  { background: #0a2a0a; color: #4CAF50; border: 1px solid #1a4a1a; }
+.pill-yellow { background: #2a2200; color: #FFC107; border: 1px solid #4a3a00; }
+.pill-red    { background: #2a0a0a; color: #f44336; border: 1px solid #4a1a1a; }
+.pill-blue   { background: #0a1a2a; color: #4FC3F7; border: 1px solid #1a3a5a; }
+.pill-orange { background: #2a1a00; color: #FF9800; border: 1px solid #4a3000; }
+
+/* ── Progress bar ── */
+.c-bar { background: #1a2035; border-radius: 4px; height: 14px; overflow: hidden; }
+.c-bar-fill { height: 100%; border-radius: 4px; }
+
+/* ── Stat row (label: value pairs) ── */
+.stat-row {
+    display: flex; gap: 20px; flex-wrap: wrap;
+    font-size: 11px; color: #8a9bb5;
+    margin-top: 6px;
+}
+.stat-row b { font-weight: 700; }
+
+/* ── Detail line under ticker rows ── */
+.detail-line {
+    font-size: 11px;
+    color: #6a7a9a;
+    margin-top: 4px;
+    line-height: 1.6;
+}
+
+/* ── Table header row ── */
+.tbl-header {
+    display: flex;
+    padding: 8px 14px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #6a7a9a;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    border-bottom: 1px solid #1e2a40;
+    margin-bottom: 4px;
+}
+
+/* ── Responsive cards grid ── */
+@media (max-width: 768px) {
+    .c-card, .c-card-dark, .c-card-accent { padding: 12px 14px; }
+    .t-num { font-size: 22px !important; }
+    .t-xl  { font-size: 18px !important; }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -1889,6 +2114,463 @@ def breakout_acceleration_alpha(info, hist):
         pass
 
     return max(-6, min(22, round(alpha)))
+
+
+# ─────────────────────────────────────────────────────────────
+# EXHAUSTION PENALTY OVERLAY
+# Penalises overextended stocks to reduce false-positive signals.
+# Pure subtraction — does NOT modify existing scores or weights.
+# ─────────────────────────────────────────────────────────────
+
+def exhaustion_penalty(hist):
+    if hist is None or hist.empty or len(hist) < 20:
+        return 0
+    penalty = 0
+    close = hist["Close"].dropna()
+    volume = hist["Volume"].fillna(0)
+    if len(close) < 20:
+        return 0
+    price = float(close.iloc[-1])
+
+    sma_20 = float(close.tail(20).mean())
+    sma_50 = float(close.tail(50).mean()) if len(close) >= 50 else sma_20
+    dist_20 = ((price - sma_20) / sma_20 * 100) if sma_20 else 0
+    dist_50 = ((price - sma_50) / sma_50 * 100) if sma_50 else 0
+
+    # ── 1. OVEREXTENSION — price too far above moving averages ──
+    if dist_20 > 25:
+        penalty -= 8
+    elif dist_20 > 18:
+        penalty -= 5
+    elif dist_20 > 12:
+        penalty -= 2
+
+    if dist_50 > 40:
+        penalty -= 4
+    elif dist_50 > 25:
+        penalty -= 2
+
+    # ── 2. RSI OVERBOUGHT — not single reading but regime ──
+    delta = close.diff()
+    gain = delta.clip(lower=0).rolling(14).mean()
+    loss = (-delta.clip(upper=0)).rolling(14).mean()
+    rs = gain / loss.replace(0, float('nan'))
+    rsi = (100 - (100 / (1 + rs))).dropna()
+    if len(rsi) >= 5:
+        current_rsi = float(rsi.iloc[-1])
+        avg_rsi_5 = float(rsi.iloc[-5:].mean())
+        if current_rsi > 78 and avg_rsi_5 > 72:
+            penalty -= 6
+        elif current_rsi > 72 and avg_rsi_5 > 65:
+            penalty -= 3
+
+    # ── 3. MOMENTUM FADE — ret_15 positive but ret_5 or ret_3 negative ──
+    ret_15 = (price - float(close.iloc[-15])) / float(close.iloc[-15]) * 100 if len(close) >= 15 else 0
+    ret_5 = (price - float(close.iloc[-5])) / float(close.iloc[-5]) * 100 if len(close) >= 5 else 0
+    ret_3 = (price - float(close.iloc[-3])) / float(close.iloc[-3]) * 100 if len(close) >= 3 else 0
+    if ret_15 > 8 and ret_5 < -2:
+        penalty -= 5
+    elif ret_15 > 5 and ret_3 < -1.5:
+        penalty -= 3
+
+    # ── 4. VOLUME DRYING UP on rally — weak hands, no conviction ──
+    if len(volume) >= 20:
+        vol_10 = float(volume.iloc[-10:].mean())
+        vol_20 = float(volume.iloc[-20:].mean())
+        if vol_20 > 0 and ret_15 > 5:
+            vol_ratio = vol_10 / vol_20
+            if vol_ratio < 0.65:
+                penalty -= 5
+            elif vol_ratio < 0.80:
+                penalty -= 3
+
+    # ── 5. BEARISH DIVERGENCE — price making new highs, RSI making lower highs ──
+    if len(rsi) >= 20 and len(close) >= 20:
+        price_high_10 = float(close.iloc[-10:].max())
+        price_high_20 = float(close.iloc[-20:-10].max())
+        rsi_high_10 = float(rsi.iloc[-10:].max())
+        rsi_high_20 = float(rsi.iloc[-20:-10].max())
+        if price_high_10 > price_high_20 and rsi_high_10 < rsi_high_20 - 5:
+            penalty -= 4
+
+    return max(-18, round(penalty))
+
+
+# ─────────────────────────────────────────────────────────────
+# BIG MONEY ACCUMULATION DETECTOR
+# Detects institutional/insider accumulation patterns that
+# precede 100%+ moves: insider clusters, volume accumulation,
+# institutional ownership shifts, smart-money footprints.
+# Uses Finnhub insider + Finviz + price-volume analysis.
+# ─────────────────────────────────────────────────────────────
+
+@st.cache_data(ttl=600, show_spinner=False)
+def big_money_score(ticker, hist):
+    if hist is None or hist.empty or len(hist) < 20:
+        return 0, []
+    score = 0
+    signals = []
+    close = hist["Close"].dropna()
+    volume = hist["Volume"].fillna(0)
+    price = float(close.iloc[-1])
+
+    # ── 1. INSIDER CLUSTER BUYING (Finnhub) ──
+    try:
+        insider = fetch_finnhub_insider(ticker)
+        if insider and isinstance(insider, dict):
+            txns = insider.get("data", [])
+            cutoff_30 = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+            cutoff_90 = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+            buys_30 = sum(1 for t in txns if t.get("transactionType") == "P - Purchase" and (t.get("transactionDate", "") >= cutoff_30))
+            buys_90 = sum(1 for t in txns if t.get("transactionType") == "P - Purchase" and (t.get("transactionDate", "") >= cutoff_90))
+            sells_90 = sum(1 for t in txns if t.get("transactionType") == "S - Sale" and (t.get("transactionDate", "") >= cutoff_90))
+            buy_value_90 = sum(
+                abs(float(t.get("share", 0) or 0) * float(t.get("price", 0) or 0))
+                for t in txns
+                if t.get("transactionType") == "P - Purchase" and (t.get("transactionDate", "") >= cutoff_90)
+            )
+            if buys_30 >= 3:
+                score += 12
+                signals.append(f"{buys_30} insider buys in 30 days — cluster buying")
+            elif buys_90 >= 5:
+                score += 8
+                signals.append(f"{buys_90} insider buys in 90 days")
+            elif buys_90 >= 2:
+                score += 4
+                signals.append(f"{buys_90} insider buys in 90 days")
+            if buys_90 > 0 and sells_90 == 0:
+                score += 5
+                signals.append("Zero insider selling — high conviction")
+            if buy_value_90 > 1_000_000:
+                score += 6
+                signals.append(f"Insider buy value ${buy_value_90/1_000_000:.1f}M — serious commitment")
+            elif buy_value_90 > 250_000:
+                score += 3
+                signals.append(f"Insider buy value ${buy_value_90/1_000:.0f}K")
+    except Exception:
+        pass
+
+    # ── 2. INSTITUTIONAL OWNERSHIP SIGNALS (Finviz) ──
+    try:
+        fv = fetch_finviz(ticker)
+        if fv:
+            inst_own = _parse_finviz_pct(fv.get("Inst Own"))
+            insider_own = _parse_finviz_pct(fv.get("Insider Own"))
+            short_float = _parse_finviz_pct(fv.get("Short Float"))
+            target = _parse_finviz_num(fv.get("Target Price"))
+            if inst_own is not None:
+                if 0.20 <= inst_own <= 0.70:
+                    score += 4
+                    signals.append(f"Inst ownership {inst_own*100:.0f}% — room for accumulation")
+                elif inst_own < 0.20:
+                    score += 6
+                    signals.append(f"Inst ownership only {inst_own*100:.0f}% — undiscovered by institutions")
+            if insider_own is not None and insider_own > 0.10:
+                score += 3
+                signals.append(f"Insider ownership {insider_own*100:.0f}% — skin in the game")
+            if short_float is not None and short_float > 0.15:
+                ret_15 = (price - float(close.iloc[-15])) / float(close.iloc[-15]) * 100 if len(close) >= 15 else 0
+                if ret_15 > 5:
+                    score += 5
+                    signals.append(f"Short float {short_float*100:.0f}% + rising — squeeze fuel")
+            if target is not None and target > price * 1.40:
+                score += 4
+                signals.append(f"Analyst target ${target:.0f} vs ${price:.0f} — {((target/price)-1)*100:.0f}% upside")
+    except Exception:
+        pass
+
+    # ── 3. VOLUME ACCUMULATION PATTERN — rising volume on up days ──
+    if len(close) >= 20 and len(volume) >= 20:
+        changes = close.diff().iloc[-20:]
+        vols = volume.iloc[-20:]
+        up_vol = float(vols[changes > 0].sum())
+        down_vol = float(vols[changes <= 0].sum())
+        if down_vol > 0:
+            ad_ratio = up_vol / down_vol
+            if ad_ratio > 2.5:
+                score += 6
+                signals.append(f"Up-volume / down-volume ratio {ad_ratio:.1f}x — heavy accumulation")
+            elif ad_ratio > 1.8:
+                score += 3
+                signals.append(f"Up/down volume ratio {ad_ratio:.1f}x — accumulation pattern")
+        elif up_vol > 0:
+            score += 4
+            signals.append("All volume on up days — stealth accumulation")
+
+    # ── 4. BASE-BUILDING — price consolidating tight, volume quiet (pre-breakout) ──
+    if len(close) >= 30:
+        recent_30 = close.iloc[-30:]
+        high_30 = float(recent_30.max())
+        low_30 = float(recent_30.min())
+        range_pct = ((high_30 - low_30) / low_30 * 100) if low_30 > 0 else 999
+        if range_pct < 12 and price > float(close.iloc[-60:].mean()) if len(close) >= 60 else True:
+            score += 5
+            signals.append(f"Tight 30-day range ({range_pct:.0f}%) — coiled base")
+
+    # ── 5. ANALYST MOMENTUM — upgrades accelerating ──
+    try:
+        recs = fetch_finnhub_recommendations(ticker)
+        if recs and isinstance(recs, list) and len(recs) >= 2:
+            latest = recs[0]
+            prev = recs[1]
+            buy_now = latest.get("strongBuy", 0) + latest.get("buy", 0)
+            buy_prev = prev.get("strongBuy", 0) + prev.get("buy", 0)
+            if buy_now > buy_prev + 2:
+                score += 5
+                signals.append(f"Analyst upgrades accelerating: {buy_prev} → {buy_now} buys")
+            elif buy_now > buy_prev:
+                score += 2
+                signals.append(f"Analyst sentiment improving: {buy_prev} → {buy_now} buys")
+    except Exception:
+        pass
+
+    # ── 6. NEWS DENSITY — narrative building (Finnhub) ──
+    try:
+        news = fetch_finnhub_news(ticker)
+        if news and isinstance(news, list):
+            if len(news) >= 15:
+                score += 3
+                signals.append(f"{len(news)} news articles in 7 days — narrative building")
+            elif len(news) >= 8:
+                score += 1
+    except Exception:
+        pass
+
+    return max(0, min(50, score)), signals
+
+
+# ─────────────────────────────────────────────────────────────
+# 15-DAY PROJECTED MOVE (%)
+# Smarter projection that accounts for exhaustion, big money,
+# relative strength, and mean-reversion tendency.
+# Not a guarantee — an estimated range based on current signals.
+# ─────────────────────────────────────────────────────────────
+
+def project_15d_move(hist, breakout=0, exhaust=0, big_money=0, confirmation=50):
+    if hist is None or hist.empty or len(hist) < 20:
+        return 0, 0, 0
+    close = hist["Close"].dropna()
+    volume = hist["Volume"].fillna(0)
+    price = float(close.iloc[-1])
+
+    ret_15 = (price - float(close.iloc[-15])) / float(close.iloc[-15]) * 100 if len(close) >= 15 else 0
+    ret_5 = (price - float(close.iloc[-5])) / float(close.iloc[-5]) * 100 if len(close) >= 5 else 0
+    sma_20 = float(close.tail(20).mean())
+    dist_20 = ((price - sma_20) / sma_20 * 100) if sma_20 else 0
+
+    base = 0
+
+    # Recent momentum — dampened, not extrapolated raw
+    if ret_5 > 0:
+        base += min(ret_5 * 0.35, 5)
+    else:
+        base += max(ret_5 * 0.5, -6)
+
+    # Breakout overlay contribution
+    base += breakout * 0.3
+
+    # Exhaustion drags projection down
+    base += exhaust * 0.5
+
+    # Big money lifts projection — institutions don't buy to lose
+    if big_money >= 20:
+        base += 6
+    elif big_money >= 10:
+        base += 3.5
+    elif big_money >= 5:
+        base += 1.5
+
+    # Confirmation boost
+    if confirmation >= 80:
+        base += 3
+    elif confirmation >= 65:
+        base += 1.5
+    elif confirmation < 40:
+        base -= 2
+
+    # Mean-reversion pressure — overextended stocks pull back
+    if dist_20 > 20:
+        base -= 4
+    elif dist_20 > 12:
+        base -= 2
+    elif -3 <= dist_20 <= 8:
+        base += 1
+
+    # Volume health — rising volume confirms, falling questions
+    if len(volume) >= 20:
+        vol_10 = float(volume.iloc[-10:].mean())
+        vol_20 = float(volume.iloc[-20:].mean())
+        if vol_20 > 0:
+            vr = vol_10 / vol_20
+            if vr > 1.5:
+                base += 2
+            elif vr < 0.7:
+                base -= 2
+
+    # Relative strength vs SPY
+    spy_mom = _get_spy_momentum()
+    if len(close) >= 20:
+        stock_mom_20 = (price - float(close.iloc[-20])) / float(close.iloc[-20]) * 100
+        rs = stock_mom_20 - spy_mom.get("mom_20", 0)
+        if rs > 10:
+            base += 2
+        elif rs < -10:
+            base -= 2
+
+    proj = round(max(-12, min(25, base)), 1)
+    bull = round(max(proj + 3, proj * 1.4 if proj > 0 else proj + 2), 1)
+    bear = round(min(proj - 3, proj * 0.5 if proj > 0 else proj - 2), 1)
+    bull = min(bull, 30)
+    bear = max(bear, -15)
+
+    return proj, bear, bull
+
+
+# ─────────────────────────────────────────────────────────────
+# BACKTESTING ENGINE
+# Simulates CFIS signals at historical dates and compares
+# projected moves vs actual 15-day outcomes.
+# ─────────────────────────────────────────────────────────────
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def run_backtest(tickers, lookback_days=252, step_days=5):
+    results = []
+    try:
+        batch = yf.download(
+            list(tickers), period="18mo", interval="1d",
+            group_by="ticker", progress=False, threads=True, timeout=15,
+        )
+    except Exception:
+        return results
+
+    spy_data = None
+    try:
+        spy_data = yf.Ticker("SPY").history(period="18mo")
+    except Exception:
+        pass
+
+    def get_hist(ticker):
+        if batch.empty:
+            return pd.DataFrame()
+        try:
+            if isinstance(batch.columns, pd.MultiIndex):
+                if ticker in batch.columns.get_level_values(0):
+                    return batch[ticker].dropna(how="all")
+                if ticker in batch.columns.get_level_values(1):
+                    return batch.xs(ticker, axis=1, level=1).dropna(how="all")
+            return batch.dropna(how="all")
+        except Exception:
+            return pd.DataFrame()
+
+    for ticker in tickers:
+        full_hist = get_hist(ticker)
+        if full_hist.empty or len(full_hist) < lookback_days + 15:
+            continue
+
+        close_col = "Close" if "Close" in full_hist.columns else None
+        if not close_col or "Volume" not in full_hist.columns:
+            continue
+        full_close = full_hist[close_col].dropna()
+        if len(full_close) < lookback_days + 15:
+            continue
+
+        start_idx = len(full_close) - lookback_days
+        for idx in range(start_idx, len(full_close) - 15, step_days):
+            try:
+                sim_hist = full_hist.iloc[max(0, idx - 60):idx + 1].copy()
+                if len(sim_hist) < 20:
+                    continue
+
+                sim_close = sim_hist[close_col].dropna()
+                sim_vol = sim_hist["Volume"].fillna(0)
+                price = float(sim_close.iloc[-1])
+                if not price:
+                    continue
+
+                ret_15 = (price - float(sim_close.iloc[-15])) / float(sim_close.iloc[-15]) * 100 if len(sim_close) >= 15 else 0
+                ret_5 = (price - float(sim_close.iloc[-5])) / float(sim_close.iloc[-5]) * 100 if len(sim_close) >= 5 else 0
+
+                avg_vol_20 = float(sim_vol.iloc[-20:].mean()) if len(sim_vol) >= 20 else 0
+                recent_vol = float(sim_vol.iloc[-5:].mean())
+                vol_spike = (recent_vol / avg_vol_20) if avg_vol_20 > 0 else 1.0
+
+                sma_20 = float(sim_close.tail(20).mean()) if len(sim_close) >= 20 else price
+                dist_20 = ((price - sma_20) / sma_20 * 100) if sma_20 else 0
+                up_days_10 = int((sim_close.diff().tail(10) > 0).sum()) if len(sim_close) >= 11 else 0
+
+                ba = breakout_acceleration_alpha({}, sim_hist)
+                ex = exhaustion_penalty(sim_hist)
+
+                confirmation = 35
+                if 3 <= ret_15 <= 18:
+                    confirmation += 14
+                elif 18 < ret_15 <= 30:
+                    confirmation += 7
+                elif ret_15 > 30:
+                    confirmation -= 15
+                elif ret_15 > 0:
+                    confirmation += 6
+                else:
+                    confirmation -= 10
+                if ret_5 > 3:
+                    confirmation += 8
+                elif ret_5 > 0:
+                    confirmation += 4
+                elif ret_5 < -4:
+                    confirmation -= 12
+                if 1.15 <= vol_spike <= 2.8:
+                    confirmation += 18
+                elif vol_spike > 2.8:
+                    confirmation += 6
+                elif vol_spike >= 0.95:
+                    confirmation += 3
+                if price > sma_20:
+                    confirmation += 6
+                else:
+                    confirmation -= 8
+                if 0 <= dist_20 <= 10:
+                    confirmation += 6
+                elif dist_20 > 18:
+                    confirmation -= 10
+                if 5 <= up_days_10 <= 8:
+                    confirmation += 7
+                confirmation = max(0, min(100, round(confirmation)))
+
+                proj, proj_bear, proj_bull = project_15d_move(
+                    sim_hist, breakout=ba, exhaust=ex,
+                    big_money=0, confirmation=confirmation,
+                )
+
+                actual_price = float(full_close.iloc[idx + 15]) if idx + 15 < len(full_close) else None
+                if actual_price is None:
+                    continue
+                actual_move = (actual_price - price) / price * 100
+
+                direction_correct = (proj > 0 and actual_move > 0) or (proj < 0 and actual_move < 0) or (proj == 0)
+                error = abs(proj - actual_move)
+
+                sim_date = str(sim_close.index[- 1].date()) if hasattr(sim_close.index[-1], 'date') else str(sim_close.index[-1])[:10]
+
+                results.append({
+                    "ticker": ticker,
+                    "date": sim_date,
+                    "price": round(price, 2),
+                    "proj": proj,
+                    "proj_bear": proj_bear,
+                    "proj_bull": proj_bull,
+                    "actual": round(actual_move, 1),
+                    "actual_price": round(actual_price, 2),
+                    "error": round(error, 1),
+                    "direction_correct": direction_correct,
+                    "in_range": proj_bear <= actual_move <= proj_bull,
+                    "breakout": ba,
+                    "exhaust": ex,
+                    "confirmation": confirmation,
+                })
+            except Exception:
+                continue
+
+    return results
 
 
 def cfis_composite(scores, info=None, hist=None):
@@ -8022,6 +8704,7 @@ with st.sidebar:
         "6️⃣ Macro Chessboard",
         "7️⃣ Bridgewater/Aladdin Overlay",
         "8️⃣ A-Level Upgrade Roadmap",
+        "9️⃣ Institutional Intelligence",
     ], index=1, label_visibility="collapsed")
     st.divider()
     st.caption("Data: Yahoo Finance · Cache: 5 min")
@@ -8333,6 +9016,10 @@ def scan_radar(universe):
                 hot = max(hot, 56)
             hot = max(0, min(100, round(hot)))
 
+            ba = breakout_acceleration_alpha({}, hist)
+            exhaust = exhaustion_penalty(hist)
+            hot = max(0, min(100, round(hot + ba + exhaust)))
+
             confirmation = 35
             if 3 <= ret_15 <= 18:
                 confirmation += 14
@@ -8448,6 +9135,11 @@ def scan_radar(universe):
                 "emotion": round(emotion),
                 "invisible_hand": round(invisible_hand),
                 "timing_score": round(timing_score),
+                "breakout_alpha": ba,
+                "exhaustion": exhaust,
+                "big_money": 0,
+                "big_money_signals": [],
+                "proj_15d": 0, "proj_bear": 0, "proj_bull": 0, "proj_target": 0,
             })
         except Exception:
             results.append({
@@ -8467,12 +9159,36 @@ def scan_radar(universe):
                 "corporate": 50, "geopolitical": 50, "global_synergy": 50,
                 "capital_migration": 50, "emotion": 50,
                 "invisible_hand": 50, "timing_score": round(timing_score),
+                "breakout_alpha": 0,
+                "exhaustion": 0,
+                "big_money": 0,
+                "big_money_signals": [],
+                "proj_15d": 0, "proj_bear": 0, "proj_bull": 0, "proj_target": 0,
             })
 
         if (i + 1) % 8 == 0:
             time.sleep(0.15)
 
     results.sort(key=lambda x: x["hot_score"], reverse=True)
+    for r in results[:20]:
+        try:
+            hist = ticker_history(r["ticker"])
+            bm, bm_sigs = big_money_score(r["ticker"], hist)
+            r["big_money"] = bm
+            r["big_money_signals"] = bm_sigs
+            proj, proj_bear, proj_bull = project_15d_move(
+                hist,
+                breakout=r.get("breakout_alpha", 0),
+                exhaust=r.get("exhaustion", 0),
+                big_money=bm,
+                confirmation=r.get("confirmation", 50),
+            )
+            r["proj_15d"] = proj
+            r["proj_bear"] = proj_bear
+            r["proj_bull"] = proj_bull
+            r["proj_target"] = round(r["price"] * (1 + proj / 100), 2)
+        except Exception:
+            pass
     return results
 
 
@@ -8670,6 +9386,234 @@ def build_institutional_overlay(universe_tuple):
 
     overlay_rows.sort(key=lambda x: x["overlay_score"], reverse=True)
     return overlay_rows
+
+
+# ═══════════════════════════════════════════════════════════════
+# INSTITUTIONAL INTELLIGENCE ENGINE
+# 1. 13F Institutional Tracker (yfinance institutional_holders)
+# 2. Sector Rotation Flow (ETF price + volume analysis)
+# 3. ML Signal Optimizer (learns which signal combos work best)
+# ═══════════════════════════════════════════════════════════════
+
+SECTOR_ETFS = {
+    "Technology": "XLK",
+    "AI / Semis": "SOXX",
+    "Energy / Nuclear": "XLE",
+    "Defense / Aerospace": "ITA",
+    "Healthcare / Biotech": "XBI",
+    "Financials / Crypto": "XLF",
+    "Consumer": "XLY",
+    "Utilities": "XLU",
+    "Materials": "XLB",
+    "Industrials": "XLI",
+    "Real Estate": "XLRE",
+    "Communication": "XLC",
+}
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_13f_tracker(ticker):
+    try:
+        t = yf.Ticker(ticker)
+        ih = t.institutional_holders
+        mh = t.major_holders
+        ins = t.insider_transactions
+
+        result = {
+            "ticker": ticker,
+            "inst_pct": 0, "insider_pct": 0, "inst_count": 0,
+            "top_holders": [], "accumulating": [], "reducing": [],
+            "insider_buys": [], "insider_sells": [],
+            "net_inst_change": 0,
+        }
+
+        if mh is not None and not mh.empty:
+            try:
+                vals = dict(zip(mh["Breakdown"], mh["Value"]))
+                result["inst_pct"] = float(vals.get("institutionsPercentHeld", 0))
+                result["insider_pct"] = float(vals.get("insidersPercentHeld", 0))
+                result["inst_count"] = int(vals.get("institutionsCount", 0))
+            except Exception:
+                pass
+
+        if ih is not None and not ih.empty:
+            for _, row in ih.head(15).iterrows():
+                holder = {
+                    "name": str(row.get("Holder", "Unknown"))[:40],
+                    "pct": float(row.get("pctHeld", 0)),
+                    "shares": int(row.get("Shares", 0)),
+                    "value": float(row.get("Value", 0)),
+                    "change": float(row.get("pctChange", 0)),
+                    "date": str(row.get("Date Reported", ""))[:10],
+                }
+                result["top_holders"].append(holder)
+                if holder["change"] > 0.02:
+                    result["accumulating"].append(holder)
+                elif holder["change"] < -0.02:
+                    result["reducing"].append(holder)
+
+            changes = [h["change"] for h in result["top_holders"] if h["change"] != 0]
+            result["net_inst_change"] = sum(changes) / len(changes) if changes else 0
+
+        if ins is not None and not ins.empty:
+            for _, row in ins.head(20).iterrows():
+                txt = str(row.get("Text", ""))
+                txn = {
+                    "insider": str(row.get("Insider", ""))[:30],
+                    "position": str(row.get("Position", "")),
+                    "shares": int(row.get("Shares", 0)),
+                    "value": float(row.get("Value", 0)),
+                    "date": str(row.get("Start Date", ""))[:10],
+                    "type": txt,
+                }
+                if "Purchase" in txt:
+                    result["insider_buys"].append(txn)
+                elif "Sale" in txt:
+                    result["insider_sells"].append(txn)
+
+        return result
+    except Exception:
+        return {"ticker": ticker, "inst_pct": 0, "insider_pct": 0, "inst_count": 0,
+                "top_holders": [], "accumulating": [], "reducing": [],
+                "insider_buys": [], "insider_sells": [], "net_inst_change": 0}
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def fetch_sector_rotation():
+    etfs = list(SECTOR_ETFS.values()) + ["SPY"]
+    try:
+        data = yf.download(etfs, period="6mo", interval="1d", group_by="ticker", progress=False, threads=True, timeout=12)
+    except Exception:
+        return []
+
+    def etf_metrics(sym):
+        try:
+            if isinstance(data.columns, pd.MultiIndex):
+                if sym in data.columns.get_level_values(0):
+                    df = data[sym].dropna(how="all")
+                elif sym in data.columns.get_level_values(1):
+                    df = data.xs(sym, axis=1, level=1).dropna(how="all")
+                else:
+                    return None
+            else:
+                df = data.dropna(how="all")
+            close = df["Close"].dropna()
+            vol = df["Volume"].fillna(0)
+            if len(close) < 30:
+                return None
+            price = float(close.iloc[-1])
+            ret_5 = (price - float(close.iloc[-5])) / float(close.iloc[-5]) * 100 if len(close) >= 5 else 0
+            ret_15 = (price - float(close.iloc[-15])) / float(close.iloc[-15]) * 100 if len(close) >= 15 else 0
+            ret_30 = (price - float(close.iloc[-30])) / float(close.iloc[-30]) * 100 if len(close) >= 30 else 0
+            ret_60 = (price - float(close.iloc[-60])) / float(close.iloc[-60]) * 100 if len(close) >= 60 else 0
+            vol_10 = float(vol.iloc[-10:].mean())
+            vol_30 = float(vol.iloc[-30:].mean())
+            vol_ratio = vol_10 / vol_30 if vol_30 > 0 else 1
+            return {"price": price, "ret_5": ret_5, "ret_15": ret_15, "ret_30": ret_30, "ret_60": ret_60,
+                    "vol_ratio": round(vol_ratio, 2)}
+        except Exception:
+            return None
+
+    spy = etf_metrics("SPY")
+    spy_15 = spy["ret_15"] if spy else 0
+    spy_30 = spy["ret_30"] if spy else 0
+
+    rows = []
+    for sector, etf in SECTOR_ETFS.items():
+        m = etf_metrics(etf)
+        if not m:
+            continue
+        rel_15 = m["ret_15"] - spy_15
+        rel_30 = m["ret_30"] - spy_30
+        flow_score = round(50 + rel_15 * 2 + rel_30 * 1.5 + (m["vol_ratio"] - 1) * 15)
+        flow_score = max(0, min(100, flow_score))
+        if flow_score >= 70:
+            flow_label = "INFLOW"
+        elif flow_score >= 55:
+            flow_label = "NEUTRAL"
+        elif flow_score >= 40:
+            flow_label = "FADING"
+        else:
+            flow_label = "OUTFLOW"
+
+        momentum = "ACCELERATING" if m["ret_5"] > m["ret_15"] / 3 and m["ret_15"] > 0 else (
+            "DECELERATING" if m["ret_15"] > 0 and m["ret_5"] < 0 else (
+            "RECOVERING" if m["ret_5"] > 0 and m["ret_15"] < 0 else "WEAK"))
+
+        rows.append({
+            "sector": sector, "etf": etf, **m,
+            "rel_spy_15": round(rel_15, 1), "rel_spy_30": round(rel_30, 1),
+            "flow_score": flow_score, "flow_label": flow_label,
+            "momentum": momentum,
+        })
+
+    rows.sort(key=lambda x: x["flow_score"], reverse=True)
+    return rows
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def ml_signal_optimizer(tickers, lookback_days=252):
+    bt = run_backtest(tuple(sorted(tickers)), lookback_days=lookback_days, step_days=5)
+    if not bt or len(bt) < 30:
+        return None
+
+    combos = {
+        "High Breakout (≥5)": lambda r: r["breakout"] >= 5,
+        "Low Breakout (<0)": lambda r: r["breakout"] < 0,
+        "Healthy Exhaust (≥0)": lambda r: r["exhaust"] >= 0,
+        "Exhausted (≤-5)": lambda r: r["exhaust"] <= -5,
+        "Strong Confirm (≥75)": lambda r: r["confirmation"] >= 75,
+        "Weak Confirm (<50)": lambda r: r["confirmation"] < 50,
+        "BA≥5 + EX≥0": lambda r: r["breakout"] >= 5 and r["exhaust"] >= 0,
+        "BA≥5 + EX≥0 + CF≥70": lambda r: r["breakout"] >= 5 and r["exhaust"] >= 0 and r["confirmation"] >= 70,
+        "BA≥3 + EX≥0 + CF≥65": lambda r: r["breakout"] >= 3 and r["exhaust"] >= 0 and r["confirmation"] >= 65,
+        "BA<0 + EX≤-5": lambda r: r["breakout"] < 0 and r["exhaust"] <= -5,
+        "BA≥8 (Breakout regime)": lambda r: r["breakout"] >= 8,
+        "CF≥80 + EX≥0": lambda r: r["confirmation"] >= 80 and r["exhaust"] >= 0,
+    }
+
+    results = []
+    for label, filt in combos.items():
+        subset = [r for r in bt if filt(r)]
+        if len(subset) < 5:
+            continue
+        n = len(subset)
+        avg_actual = sum(r["actual"] for r in subset) / n
+        win_rate = sum(1 for r in subset if r["actual"] > 0) / n * 100
+        big_win = sum(1 for r in subset if r["actual"] > 10) / n * 100
+        big_loss = sum(1 for r in subset if r["actual"] < -10) / n * 100
+        avg_error = sum(r["error"] for r in subset) / n
+        sharpe = avg_actual / (sum((r["actual"] - avg_actual) ** 2 for r in subset) / n) ** 0.5 if n > 1 else 0
+
+        grade = "A+" if avg_actual > 8 and win_rate > 65 else (
+            "A" if avg_actual > 5 and win_rate > 60 else (
+            "B" if avg_actual > 2 and win_rate > 55 else (
+            "C" if avg_actual > 0 else "F")))
+
+        results.append({
+            "Signal Combo": label,
+            "Samples": n,
+            "Avg Return %": round(avg_actual, 1),
+            "Win Rate %": round(win_rate, 1),
+            "Big Win %": round(big_win, 1),
+            "Big Loss %": round(big_loss, 1),
+            "Avg Error %": round(avg_error, 1),
+            "Sharpe": round(sharpe, 2),
+            "Grade": grade,
+        })
+
+    results.sort(key=lambda x: x["Avg Return %"], reverse=True)
+
+    best = results[0] if results else None
+    worst = results[-1] if results else None
+
+    return {
+        "combos": results,
+        "best": best,
+        "worst": worst,
+        "total_samples": len(bt),
+        "overall_win_rate": round(sum(1 for r in bt if r["actual"] > 0) / len(bt) * 100, 1),
+        "overall_avg": round(sum(r["actual"] for r in bt) / len(bt), 1),
+    }
 
 
 if page in ("1️⃣ Command Center", "4️⃣ Single Ticker Scanner"):
@@ -9264,8 +10208,8 @@ elif page == "2️⃣ 15-Day Up Signals":
     st.caption("Short-term capital-flow radar weighted by corporate performance, capital migration, timing, geopolitics, global synergy, options, and emotion.")
 
     st.markdown("""
-    <div style="background:#111827;border:1px solid #2e3550;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:12px;color:#c9d1d9;line-height:1.8">
-        <strong style="color:#4CAF50">Model:</strong>
+    <div class="c-banner t-sm">
+        <strong class="tc-green">Model:</strong>
         Capital Migration 30% · Timing 25% · Corporate Performance 20% · Geopolitical 10% · Global Synergy 7% · Options 5% · Emotion 3%.
         The goal is not to find the safest company. The goal is to detect where capital may move within roughly 15 trading days.
     </div>
@@ -9295,6 +10239,19 @@ elif page == "2️⃣ 15-Day Up Signals":
             confirm_c = "#4CAF50" if confirm >= 75 else ("#FFC107" if confirm >= 60 else ("#78909C" if confirm >= 45 else "#ef5350"))
             mom_c = "#4CAF50" if r["ret_15"] >= 0 else "#f44336"
             tags = " · ".join(r["tags"][:5]) if r["tags"] else "Monitoring"
+            ba = r.get("breakout_alpha", 0)
+            ba_c = "#00E676" if ba >= 8 else ("#4CAF50" if ba >= 4 else ("#FFC107" if ba >= 1 else ("#78909C" if ba >= 0 else "#ef5350")))
+            ba_label = "BREAKOUT" if ba >= 8 else ("ACCEL" if ba >= 4 else ("BUILDING" if ba >= 1 else ("FLAT" if ba >= 0 else "DRAG")))
+            ex = r.get("exhaustion", 0)
+            ex_c = "#ef5350" if ex <= -8 else ("#FFC107" if ex <= -3 else "#4CAF50")
+            ex_label = "EXHAUSTED" if ex <= -8 else ("CAUTION" if ex <= -3 else "HEALTHY")
+            bm = r.get("big_money", 0)
+            bm_c = "#00E676" if bm >= 20 else ("#4CAF50" if bm >= 10 else ("#FFC107" if bm >= 5 else "#78909C"))
+            bm_sigs = r.get("big_money_signals", [])
+            p15 = r.get("proj_15d", 0)
+            p15_c = "#00E676" if p15 >= 8 else ("#4CAF50" if p15 >= 4 else ("#FFC107" if p15 >= 1 else ("#78909C" if p15 >= 0 else "#ef5350")))
+            p15_target = r.get("proj_target", 0)
+            p15_range = f"{r.get('proj_bear', 0):+.1f}% to {r.get('proj_bull', 0):+.1f}%"
             if r["hot_score"] >= 78 and confirm >= 75:
                 action = "ATTACK"
             elif r["hot_score"] >= 78 and confirm >= 60:
@@ -9306,32 +10263,37 @@ elif page == "2️⃣ 15-Day Up Signals":
             else:
                 action = "MONITOR"
             st.markdown(f"""
-                <div style="background:#161b27;border-left:4px solid {score_c};border-radius:10px;padding:14px 16px;margin-bottom:8px">
-                    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-                        <div style="min-width:34px;font-size:20px;font-weight:900;color:{score_c}">#{i}</div>
+                <div class="c-card-accent" style="border-left-color:{score_c}">
+                    <div class="d-flex ai-center flex-wrap gap-md">
+                        <div style="min-width:34px" class="t-lg fw-9" style="color:{score_c}"><span style="color:{score_c}">#{i}</span></div>
                         <div style="min-width:72px">
-                            <div style="font-size:20px;font-weight:900;color:#fff">{r['ticker']}</div>
-                            <div style="font-size:10px;color:#8a9bb5">${r['price']:.2f}</div>
+                            <div class="t-lg fw-9 tc-primary">{r['ticker']}</div>
+                            <div class="t-xs tc-muted">${r['price']:.2f}</div>
                         </div>
                         <div style="min-width:72px;text-align:center">
-                            <div style="font-size:30px;font-weight:900;color:{score_c}">{r['hot_score']}</div>
-                            <div style="font-size:9px;color:#8a9bb5">15D SIGNAL</div>
+                            <div class="t-num" style="color:{score_c}">{r['hot_score']}</div>
+                            <div class="t-xs tc-dim" style="font-size:10px;letter-spacing:0.5px">15D SIGNAL</div>
                         </div>
                         <div style="min-width:78px;text-align:center">
-                            <div style="font-size:30px;font-weight:900;color:{confirm_c}">{confirm}</div>
-                            <div style="font-size:9px;color:#8a9bb5">CONFIRM</div>
+                            <div class="t-num" style="color:{confirm_c}">{confirm}</div>
+                            <div class="t-xs tc-dim" style="font-size:10px;letter-spacing:0.5px">CONFIRM</div>
                         </div>
-                        <div style="min-width:70px;text-align:center"><div style="font-size:15px;font-weight:800;color:{mom_c}">{r['ret_15']:+.1f}%</div><div style="font-size:9px;color:#8a9bb5">15D MOM</div></div>
-                        <div style="min-width:70px;text-align:center"><div style="font-size:15px;font-weight:800;color:{confirm_c}">{r.get('confirm_label','EARLY')}</div><div style="font-size:9px;color:#8a9bb5">SETUP</div></div>
-                        <div style="min-width:70px;text-align:center"><div style="font-size:15px;font-weight:800;color:#66BB6A">{r['capital_migration']}</div><div style="font-size:9px;color:#8a9bb5">CAP FLOW</div></div>
-                        <div style="min-width:70px;text-align:center"><div style="font-size:15px;font-weight:800;color:#4FC3F7">{r['corporate']}</div><div style="font-size:9px;color:#8a9bb5">CORP</div></div>
-                        <div style="min-width:70px;text-align:center"><div style="font-size:15px;font-weight:800;color:#FFB74D">{r['geopolitical']}</div><div style="font-size:9px;color:#8a9bb5">GEO</div></div>
-                        <div style="min-width:70px;text-align:center"><div style="font-size:15px;font-weight:800;color:#AB47BC">{r['global_synergy']}</div><div style="font-size:9px;color:#8a9bb5">SYNERGY</div></div>
-                        <div style="flex:1;text-align:right"><span style="background:{score_c};color:#000;border-radius:999px;padding:5px 12px;font-size:11px;font-weight:900">{action}</span></div>
+                        <div style="min-width:70px;text-align:center"><div class="t-md fw-8" style="color:{mom_c}">{r['ret_15']:+.1f}%</div><div class="t-xs tc-dim" style="font-size:10px">15D MOM</div></div>
+                        <div style="min-width:70px;text-align:center"><div class="t-md fw-8" style="color:{confirm_c}">{r.get('confirm_label','EARLY')}</div><div class="t-xs tc-dim" style="font-size:10px">SETUP</div></div>
+                        <div style="min-width:70px;text-align:center"><div class="t-md fw-8" style="color:#66BB6A">{r['capital_migration']}</div><div class="t-xs tc-dim" style="font-size:10px">CAP FLOW</div></div>
+                        <div style="min-width:70px;text-align:center"><div class="t-md fw-8 tc-blue">{r['corporate']}</div><div class="t-xs tc-dim" style="font-size:10px">CORP</div></div>
+                        <div style="min-width:70px;text-align:center"><div class="t-md fw-8 tc-orange">{r['geopolitical']}</div><div class="t-xs tc-dim" style="font-size:10px">GEO</div></div>
+                        <div style="min-width:70px;text-align:center"><div class="t-md fw-8" style="color:#AB47BC">{r['global_synergy']}</div><div class="t-xs tc-dim" style="font-size:10px">SYNERGY</div></div>
+                        <div style="min-width:78px;text-align:center"><div class="t-md fw-9" style="color:{ba_c}">{ba:+d} {ba_label}</div><div class="t-xs tc-dim" style="font-size:10px">BREAKOUT</div></div>
+                        <div style="min-width:78px;text-align:center"><div class="t-md fw-9" style="color:{ex_c}">{ex:+d} {ex_label}</div><div class="t-xs tc-dim" style="font-size:10px">EXHAUST</div></div>
+                        <div style="min-width:78px;text-align:center"><div class="t-md fw-9" style="color:{bm_c}">{bm}</div><div class="t-xs tc-dim" style="font-size:10px">BIG MONEY</div></div>
+                        <div style="min-width:98px;text-align:center"><div class="t-lg fw-9" style="color:{p15_c}">{p15:+.1f}%</div><div class="t-xs fw-7" style="color:{p15_c}">${p15_target:.2f}</div><div class="t-xs tc-dim" style="font-size:10px">15D PROJ</div></div>
+                        <div style="flex:1;text-align:right"><span class="pill" style="background:{score_c};color:#000">{action}</span></div>
                     </div>
-                    <div style="margin-top:8px;font-size:11px;color:#8a9bb5;line-height:1.6">{tags}</div>
-                    <div style="margin-top:4px;font-size:11px;color:#8a9bb5;line-height:1.6">Confirm checks: {r.get('up_days_10', 0)}/10 up-days · {r.get('dist_20', 0):+.1f}% vs 20D avg · volume {r.get('vol_spike', 1):.1f}x</div>
-                    <div style="margin-top:6px;font-size:12px;color:#c9d1d9;line-height:1.6">{r['reason']}</div>
+                    <div class="detail-line mt-sm">{tags}</div>
+                    <div class="detail-line">Projection range: {p15_range} · Confirm checks: {r.get('up_days_10', 0)}/10 up-days · {r.get('dist_20', 0):+.1f}% vs 20D avg · volume {r.get('vol_spike', 1):.1f}x</div>
+                    {"<div class='detail-line' style='color:#00E676'>Big Money: " + " · ".join(bm_sigs[:3]) + "</div>" if bm_sigs else ""}
+                    <div class="t-sm tc-secondary mt-sm" style="line-height:1.6">{r['reason']}</div>
                 </div>
                 """, unsafe_allow_html=True)
     else:
@@ -9369,12 +10331,12 @@ elif page == "5️⃣ Pattern Memory":
             for match, r in matches:
                 m_c = "#4CAF50" if match >= 75 else ("#FFC107" if match >= 60 else "#78909C")
                 st.markdown(f"""
-                <div style="display:flex;align-items:center;gap:12px;background:#161b27;border-left:4px solid {m_c};border-radius:8px;padding:10px 12px;margin:6px 0">
-                    <div style="min-width:70px;font-size:18px;font-weight:900;color:#fff">{r['ticker']}</div>
-                    <div style="min-width:64px;text-align:center"><div style="font-size:22px;font-weight:900;color:{m_c}">{match}</div><div style="font-size:9px;color:#8a9bb5">MATCH</div></div>
-                    <div style="min-width:64px;text-align:center"><div style="font-size:15px;font-weight:800;color:#66BB6A">{r['hot_score']}</div><div style="font-size:9px;color:#8a9bb5">15D</div></div>
-                    <div style="min-width:64px;text-align:center"><div style="font-size:15px;font-weight:800;color:#4FC3F7">{r['capital_migration']}</div><div style="font-size:9px;color:#8a9bb5">FLOW</div></div>
-                    <div style="flex:1;font-size:12px;color:#c9d1d9">{r['reason']}</div>
+                <div class="c-card-accent d-flex ai-center gap-md" style="border-left-color:{m_c}">
+                    <div style="min-width:70px" class="t-lg fw-9 tc-primary">{r['ticker']}</div>
+                    <div style="min-width:64px;text-align:center"><div class="t-xl fw-9" style="color:{m_c}">{match}</div><div class="t-xs tc-dim" style="font-size:10px">MATCH</div></div>
+                    <div style="min-width:64px;text-align:center"><div class="t-md fw-8" style="color:#66BB6A">{r['hot_score']}</div><div class="t-xs tc-dim" style="font-size:10px">15D</div></div>
+                    <div style="min-width:64px;text-align:center"><div class="t-md fw-8 tc-blue">{r['capital_migration']}</div><div class="t-xs tc-dim" style="font-size:10px">FLOW</div></div>
+                    <div style="flex:1" class="t-sm tc-secondary">{r['reason']}</div>
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -9411,13 +10373,152 @@ elif page == "6️⃣ Macro Chessboard":
                     st.markdown(f"**r/{p['sub']}** · {p['title']}")
 
 
+    st.divider()
+    st.subheader("📊 Projection Backtester")
+    st.caption("Test the 15D projection model against historical data. Measures direction accuracy, range accuracy, and average error.")
+
+    bt_col1, bt_col2 = st.columns(2)
+    bt_tickers = bt_col1.multiselect(
+        "Tickers to backtest",
+        options=sorted(RADAR_UNIVERSE),
+        default=["NVDA", "PLTR", "COIN", "LMT", "RIVN", "AMD", "TSLA", "SMCI", "HOOD", "RKLB"],
+        key="bt_tickers",
+    )
+    bt_days = bt_col2.selectbox("Lookback period", [60, 126, 252], index=2, format_func=lambda x: f"{x} trading days (~{x // 21} months)", key="bt_days")
+
+    if st.button("🧪 Run Backtest", key="run_bt", type="primary", use_container_width=True):
+        if bt_tickers:
+            with st.spinner(f"Backtesting {len(bt_tickers)} tickers over {bt_days} days…"):
+                bt_results = run_backtest(tuple(sorted(bt_tickers)), lookback_days=bt_days, step_days=5)
+
+            if bt_results:
+                total = len(bt_results)
+                dir_correct = sum(1 for r in bt_results if r["direction_correct"])
+                in_range = sum(1 for r in bt_results if r["in_range"])
+                avg_error = sum(r["error"] for r in bt_results) / total
+                avg_proj = sum(r["proj"] for r in bt_results) / total
+                avg_actual = sum(r["actual"] for r in bt_results) / total
+
+                big_wins = [r for r in bt_results if r["actual"] > 10 and r["proj"] > 3]
+                big_misses = [r for r in bt_results if r["proj"] > 5 and r["actual"] < -3]
+
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("Samples", total)
+                m2.metric("Direction Accuracy", f"{dir_correct / total * 100:.1f}%")
+                m3.metric("In Range Accuracy", f"{in_range / total * 100:.1f}%")
+                m4.metric("Avg Error", f"{avg_error:.1f}%")
+
+                m5, m6, m7, m8 = st.columns(4)
+                m5.metric("Avg Projection", f"{avg_proj:+.1f}%")
+                m6.metric("Avg Actual", f"{avg_actual:+.1f}%")
+                m7.metric("Big Wins (>10%)", len(big_wins))
+                m8.metric("Big Misses", len(big_misses))
+
+                st.divider()
+
+                by_ticker = {}
+                for r in bt_results:
+                    by_ticker.setdefault(r["ticker"], []).append(r)
+
+                st.markdown("#### Per-Ticker Accuracy")
+                ticker_stats = []
+                for t, rows in sorted(by_ticker.items()):
+                    n = len(rows)
+                    d_acc = sum(1 for r in rows if r["direction_correct"]) / n * 100
+                    r_acc = sum(1 for r in rows if r["in_range"]) / n * 100
+                    a_err = sum(r["error"] for r in rows) / n
+                    a_proj = sum(r["proj"] for r in rows) / n
+                    a_act = sum(r["actual"] for r in rows) / n
+                    ticker_stats.append({
+                        "Ticker": t,
+                        "Samples": n,
+                        "Direction %": round(d_acc, 1),
+                        "In Range %": round(r_acc, 1),
+                        "Avg Error %": round(a_err, 1),
+                        "Avg Proj %": round(a_proj, 1),
+                        "Avg Actual %": round(a_act, 1),
+                        "Bias": "OVER" if a_proj > a_act + 1 else ("UNDER" if a_proj < a_act - 1 else "FAIR"),
+                    })
+                st.dataframe(pd.DataFrame(ticker_stats), use_container_width=True, hide_index=True)
+
+                st.divider()
+                st.markdown("#### Biggest Wins — Projected Positive, Actual > +10%")
+                if big_wins:
+                    wins_sorted = sorted(big_wins, key=lambda r: r["actual"], reverse=True)[:10]
+                    for r in wins_sorted:
+                        st.markdown(f"""
+                        <div class="c-card-accent border-green d-flex ai-center gap-md t-sm">
+                            <div style="min-width:60px" class="fw-9 tc-primary">{r['ticker']}</div>
+                            <div style="min-width:80px" class="tc-muted">{r['date']}</div>
+                            <div style="min-width:70px">Proj: <span class="tc-blue">{r['proj']:+.1f}%</span></div>
+                            <div style="min-width:70px">Actual: <span class="tc-green">{r['actual']:+.1f}%</span></div>
+                            <div style="min-width:50px" class="tc-muted">BA:{r['breakout']:+d}</div>
+                            <div style="min-width:50px" class="tc-muted">EX:{r['exhaust']:+d}</div>
+                            <div style="min-width:50px" class="tc-muted">CF:{r['confirmation']}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                else:
+                    st.info("No big wins found in this period.")
+
+                st.markdown("#### Biggest Misses — Projected > +5%, Actual < -3%")
+                if big_misses:
+                    misses_sorted = sorted(big_misses, key=lambda r: r["actual"])[:10]
+                    for r in misses_sorted:
+                        st.markdown(f"""
+                        <div class="c-card-accent border-red d-flex ai-center gap-md t-sm">
+                            <div style="min-width:60px" class="fw-9 tc-primary">{r['ticker']}</div>
+                            <div style="min-width:80px" class="tc-muted">{r['date']}</div>
+                            <div style="min-width:70px">Proj: <span class="tc-blue">{r['proj']:+.1f}%</span></div>
+                            <div style="min-width:70px">Actual: <span class="tc-red">{r['actual']:+.1f}%</span></div>
+                            <div style="min-width:50px" class="tc-muted">BA:{r['breakout']:+d}</div>
+                            <div style="min-width:50px" class="tc-muted">EX:{r['exhaust']:+d}</div>
+                            <div style="min-width:50px" class="tc-muted">CF:{r['confirmation']}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                else:
+                    st.info("No big misses found — model is conservative enough.")
+
+                st.divider()
+                st.markdown("#### Signal Effectiveness Breakdown")
+                high_ba = [r for r in bt_results if r["breakout"] >= 5]
+                low_ex = [r for r in bt_results if r["exhaust"] <= -5]
+                high_cf = [r for r in bt_results if r["confirmation"] >= 75]
+                healthy = [r for r in bt_results if r["exhaust"] >= 0 and r["breakout"] >= 3 and r["confirmation"] >= 65]
+
+                sig_data = []
+                for label, subset in [
+                    ("Breakout +5 or higher", high_ba),
+                    ("Exhaustion -5 or worse", low_ex),
+                    ("Confirmation 75+", high_cf),
+                    ("IDEAL: Healthy + Breakout + Confirmed", healthy),
+                    ("ALL signals", bt_results),
+                ]:
+                    if subset:
+                        n = len(subset)
+                        sig_data.append({
+                            "Signal": label,
+                            "Count": n,
+                            "Avg Actual %": round(sum(r["actual"] for r in subset) / n, 1),
+                            "Direction %": round(sum(1 for r in subset if r["direction_correct"]) / n * 100, 1),
+                            "Win Rate (>0%)": round(sum(1 for r in subset if r["actual"] > 0) / n * 100, 1),
+                            "Big Win Rate (>10%)": round(sum(1 for r in subset if r["actual"] > 10) / n * 100, 1),
+                        })
+                if sig_data:
+                    st.dataframe(pd.DataFrame(sig_data), use_container_width=True, hide_index=True)
+                    st.caption("IDEAL signal = Exhaust healthy (≥0) + Breakout (≥3) + Confirmation (≥65). This is the signal combination you should prioritize for entries.")
+            else:
+                st.warning("No backtest data returned. The tickers may not have enough historical data.")
+        else:
+            st.info("Select at least one ticker to backtest.")
+
+
 elif page == "7️⃣ Bridgewater/Aladdin Overlay":
     st.title("🏛️ Bridgewater/Aladdin Overlay")
     st.caption("Institutional filter on top of the 15-day radar: signal, confirmation, macro, ETF rotation, sector strength, options liquidity proxy, and risk stop zone.")
 
     st.markdown("""
-    <div style="background:#111827;border:1px solid #2e3550;border-radius:10px;padding:12px 16px;margin-bottom:14px;font-size:12px;color:#c9d1d9;line-height:1.8">
-        <strong style="color:#4FC3F7">Overlay:</strong>
+    <div class="c-banner t-sm">
+        <strong class="tc-blue">Overlay:</strong>
         15D Signal 24% · Confirmation 22% · Macro Regime 14% · ETF Flow Proxy 14% · Sector Relative Strength 10% · Options Liquidity Proxy 8% · Risk Stop Zone 8%.
         This is not a clone of Aladdin or Bridgewater. It is a local CFIS institutional-style decision layer for short-term stock hunting.
     </div>
@@ -9450,33 +10551,42 @@ elif page == "7️⃣ Bridgewater/Aladdin Overlay":
             confirm_c = "#4CAF50" if r.get("confirmation", 0) >= 75 else ("#FFC107" if r.get("confirmation", 0) >= 60 else "#78909C")
             mom_c = "#4CAF50" if r.get("ret_15", 0) >= 0 else "#f44336"
             proj_c = "#4CAF50" if r.get("projection_15d", 0) >= 5 else ("#FFC107" if r.get("projection_15d", 0) >= 1 else "#ef5350")
+            o_ba = r.get("breakout_alpha", 0)
+            o_ba_c = "#00E676" if o_ba >= 8 else ("#4CAF50" if o_ba >= 4 else ("#FFC107" if o_ba >= 1 else ("#78909C" if o_ba >= 0 else "#ef5350")))
+            o_ex = r.get("exhaustion", 0)
+            o_ex_c = "#ef5350" if o_ex <= -8 else ("#FFC107" if o_ex <= -3 else "#4CAF50")
+            o_bm = r.get("big_money", 0)
+            o_bm_c = "#00E676" if o_bm >= 20 else ("#4CAF50" if o_bm >= 10 else ("#FFC107" if o_bm >= 5 else "#78909C"))
             stop_text = f"${r.get('stop_price', 0):.2f} ({-r.get('stop_pct_abs', 0):.1f}%)"
             target_text = f"{r.get('projection_15d', 0):+.1f}% / ${r.get('projected_target', 0):.2f}"
             st.markdown(f"""
-                <div style="background:#161b27;border-left:4px solid {overlay_c};border-radius:10px;padding:14px 16px;margin-bottom:9px">
-                    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-                        <div style="min-width:34px;font-size:20px;font-weight:900;color:{overlay_c}">#{i}</div>
+                <div class="c-card-accent" style="border-left-color:{overlay_c}">
+                    <div class="d-flex ai-center flex-wrap gap-md">
+                        <div style="min-width:34px" class="t-lg fw-9"><span style="color:{overlay_c}">#{i}</span></div>
                         <div style="min-width:84px">
-                            <div style="font-size:20px;font-weight:900;color:#fff">{r['ticker']}</div>
-                            <div style="font-size:10px;color:#8a9bb5">${r['price']:.2f} · {r['overlay_sector']}</div>
+                            <div class="t-lg fw-9 tc-primary">{r['ticker']}</div>
+                            <div class="t-xs tc-muted">${r['price']:.2f} · {r['overlay_sector']}</div>
                         </div>
                         <div style="min-width:78px;text-align:center">
-                            <div style="font-size:31px;font-weight:900;color:{overlay_c}">{r['overlay_score']}</div>
-                            <div style="font-size:9px;color:#8a9bb5">OVERLAY</div>
+                            <div class="t-num" style="color:{overlay_c}">{r['overlay_score']}</div>
+                            <div class="t-xs tc-dim" style="font-size:10px;letter-spacing:0.5px">OVERLAY</div>
                         </div>
-                        <div style="min-width:72px;text-align:center"><div style="font-size:17px;font-weight:900;color:{mom_c}">{r['hot_score']}</div><div style="font-size:9px;color:#8a9bb5">15D</div></div>
-                        <div style="min-width:78px;text-align:center"><div style="font-size:17px;font-weight:900;color:{confirm_c}">{r.get('confirmation',0)}</div><div style="font-size:9px;color:#8a9bb5">CONFIRM</div></div>
-                        <div style="min-width:92px;text-align:center"><div style="font-size:17px;font-weight:900;color:{proj_c}">{target_text}</div><div style="font-size:9px;color:#8a9bb5">15D PROJ</div></div>
-                        <div style="min-width:70px;text-align:center"><div style="font-size:17px;font-weight:900;color:#4FC3F7">{r['macro_score']}</div><div style="font-size:9px;color:#8a9bb5">MACRO</div></div>
-                        <div style="min-width:70px;text-align:center"><div style="font-size:17px;font-weight:900;color:#66BB6A">{r['etf_flow']}</div><div style="font-size:9px;color:#8a9bb5">{r['sector_etf']} FLOW</div></div>
-                        <div style="min-width:70px;text-align:center"><div style="font-size:17px;font-weight:900;color:{'#4CAF50' if r['ticker_rel_spy'] >= 0 else '#ef5350'}">{r['ticker_rel_spy']:+.1f}%</div><div style="font-size:9px;color:#8a9bb5">TICKER VS SPY</div></div>
-                        <div style="min-width:70px;text-align:center"><div style="font-size:17px;font-weight:900;color:{'#4CAF50' if r['sector_rel'] >= 0 else '#ef5350'}">{r['sector_rel']:+.1f}%</div><div style="font-size:9px;color:#8a9bb5">{r['sector_etf']} VS SPY</div></div>
-                        <div style="min-width:70px;text-align:center"><div style="font-size:17px;font-weight:900;color:#AB47BC">{r['options_liquidity']}</div><div style="font-size:9px;color:#8a9bb5">OPT LIQ</div></div>
-                        <div style="min-width:88px;text-align:center"><div style="font-size:14px;font-weight:900;color:#FFB74D">{stop_text}</div><div style="font-size:9px;color:#8a9bb5">STOP ZONE</div></div>
-                        <div style="min-width:70px;text-align:center"><div style="font-size:14px;font-weight:900;color:{proj_c}">{r.get('reward_risk', 0):.2f}x</div><div style="font-size:9px;color:#8a9bb5">R/R</div></div>
-                        <div style="flex:1;text-align:right"><span style="background:{overlay_c};color:#000;border-radius:999px;padding:5px 12px;font-size:11px;font-weight:900">{r['overlay_action']}</span></div>
+                        <div style="min-width:72px;text-align:center"><div class="t-lg fw-9" style="color:{mom_c}">{r['hot_score']}</div><div class="t-xs tc-dim" style="font-size:10px">15D</div></div>
+                        <div style="min-width:78px;text-align:center"><div class="t-lg fw-9" style="color:{confirm_c}">{r.get('confirmation',0)}</div><div class="t-xs tc-dim" style="font-size:10px">CONFIRM</div></div>
+                        <div style="min-width:92px;text-align:center"><div class="t-lg fw-9" style="color:{proj_c}">{target_text}</div><div class="t-xs tc-dim" style="font-size:10px">15D PROJ</div></div>
+                        <div style="min-width:70px;text-align:center"><div class="t-lg fw-9 tc-blue">{r['macro_score']}</div><div class="t-xs tc-dim" style="font-size:10px">MACRO</div></div>
+                        <div style="min-width:70px;text-align:center"><div class="t-lg fw-9" style="color:#66BB6A">{r['etf_flow']}</div><div class="t-xs tc-dim" style="font-size:10px">{r['sector_etf']} FLOW</div></div>
+                        <div style="min-width:70px;text-align:center"><div class="t-lg fw-9" style="color:{'#4CAF50' if r['ticker_rel_spy'] >= 0 else '#ef5350'}">{r['ticker_rel_spy']:+.1f}%</div><div class="t-xs tc-dim" style="font-size:10px">VS SPY</div></div>
+                        <div style="min-width:70px;text-align:center"><div class="t-lg fw-9" style="color:{'#4CAF50' if r['sector_rel'] >= 0 else '#ef5350'}">{r['sector_rel']:+.1f}%</div><div class="t-xs tc-dim" style="font-size:10px">{r['sector_etf']} VS SPY</div></div>
+                        <div style="min-width:70px;text-align:center"><div class="t-lg fw-9" style="color:#AB47BC">{r['options_liquidity']}</div><div class="t-xs tc-dim" style="font-size:10px">OPT LIQ</div></div>
+                        <div style="min-width:78px;text-align:center"><div class="t-lg fw-9" style="color:{o_ba_c}">{o_ba:+d}</div><div class="t-xs tc-dim" style="font-size:10px">BREAKOUT</div></div>
+                        <div style="min-width:78px;text-align:center"><div class="t-lg fw-9" style="color:{o_ex_c}">{o_ex:+d}</div><div class="t-xs tc-dim" style="font-size:10px">EXHAUST</div></div>
+                        <div style="min-width:78px;text-align:center"><div class="t-lg fw-9" style="color:{o_bm_c}">{o_bm}</div><div class="t-xs tc-dim" style="font-size:10px">BIG MONEY</div></div>
+                        <div style="min-width:88px;text-align:center"><div class="t-sm fw-9 tc-orange">{stop_text}</div><div class="t-xs tc-dim" style="font-size:10px">STOP ZONE</div></div>
+                        <div style="min-width:70px;text-align:center"><div class="t-sm fw-9" style="color:{proj_c}">{r.get('reward_risk', 0):.2f}x</div><div class="t-xs tc-dim" style="font-size:10px">R/R</div></div>
+                        <div style="flex:1;text-align:right"><span class="pill" style="background:{overlay_c};color:#000">{r['overlay_action']}</span></div>
                     </div>
-                    <div style="margin-top:8px;font-size:11px;color:#8a9bb5;line-height:1.6">
+                    <div class="detail-line mt-sm">
                         Projection range: {r.get('projection_bear', 0):+.1f}% to {r.get('projection_bull', 0):+.1f}% · Confirm checks: {r.get('up_days_10', 0)}/10 up-days · {r.get('dist_20', 0):+.1f}% vs 20D avg · volume {r.get('vol_spike', 1):.1f}x · dollar volume proxy ${r.get('dollar_vol', 0)/1_000_000:.0f}M
                     </div>
                 </div>
@@ -9499,6 +10609,9 @@ elif page == "7️⃣ Bridgewater/Aladdin Overlay":
             "Ticker vs Sector": round(r["ticker_rel_sector"], 1),
             "Sector ETF vs SPY": round(r["sector_rel"], 1),
             "Opt Liq": r["options_liquidity"],
+            "Breakout": r.get("breakout_alpha", 0),
+            "Exhaust": r.get("exhaustion", 0),
+            "Big Money": r.get("big_money", 0),
             "Stop": round(r.get("stop_price", 0), 2),
             "Stop %": round(-r.get("stop_pct_abs", 0), 1),
             "ETF": r["sector_etf"],
@@ -9514,8 +10627,8 @@ elif page == "8️⃣ A-Level Upgrade Roadmap":
     st.caption("What CFIS-X Lite still needs before I would call it A-level: data gaps, build order, and confidence calibration.")
 
     st.markdown("""
-    <div style="background:#111827;border:1px solid #2e3550;border-radius:10px;padding:14px 18px;margin-bottom:14px;font-size:12px;color:#c9d1d9;line-height:1.8">
-        <strong style="color:#4FC3F7">Current rating:</strong> B / B+ local MVP.
+    <div class="c-banner t-sm">
+        <strong class="tc-blue">Current rating:</strong> B / B+ local MVP.
         The system now has a strong workflow: 15D Heat → Institutional Overlay → 60D Options.
         To become A-level, the next work is not more pages. It is better evidence, backtesting, and calibration.
     </div>
@@ -9609,16 +10722,16 @@ elif page == "8️⃣ A-Level Upgrade Roadmap":
         p_color = "#f44336" if item["priority"] == "P0" else ("#FFC107" if item["priority"] == "P1" else "#4FC3F7")
         status_color = "#4CAF50" if item["status"] == "Partial" else ("#FFC107" if item["status"] in ("Proxy now", "Early") else "#ef5350")
         st.markdown(f"""
-        <div style="background:#161b27;border-left:4px solid {p_color};border-radius:10px;padding:14px 16px;margin-bottom:10px">
-            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-                <div style="min-width:46px;text-align:center;background:{p_color};color:#000;border-radius:999px;padding:4px 10px;font-size:11px;font-weight:900">{item['priority']}</div>
-                <div style="flex:1;font-size:16px;font-weight:900;color:#fff">{item['name']}</div>
-                <div style="font-size:11px;font-weight:800;color:{status_color}">{item['status']}</div>
-                <div style="font-size:11px;font-weight:800;color:#66BB6A">{item['impact']}</div>
+        <div class="c-card-accent" style="border-left-color:{p_color}">
+            <div class="d-flex gap-md ai-center flex-wrap">
+                <span class="pill" style="background:{p_color};color:#000">{item['priority']}</span>
+                <div style="flex:1" class="t-md fw-9 tc-primary">{item['name']}</div>
+                <span class="t-xs fw-8" style="color:{status_color}">{item['status']}</span>
+                <span class="t-xs fw-8" style="color:#66BB6A">{item['impact']}</span>
             </div>
-            <div style="margin-top:8px;font-size:12px;color:#c9d1d9;line-height:1.7"><b>Why:</b> {item['why']}</div>
-            <div style="margin-top:6px;font-size:11px;color:#8a9bb5;line-height:1.7"><b>Data:</b> {item['source']}</div>
-            <div style="margin-top:6px;font-size:11px;color:#8a9bb5;line-height:1.7"><b>Build:</b> {item['build']}</div>
+            <div class="t-sm tc-secondary mt-sm" style="line-height:1.7"><b>Why:</b> {item['why']}</div>
+            <div class="t-xs tc-muted mt-sm" style="line-height:1.7"><b>Data:</b> {item['source']}</div>
+            <div class="t-xs tc-muted mt-sm" style="line-height:1.7"><b>Build:</b> {item['build']}</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -9635,12 +10748,246 @@ elif page == "8️⃣ A-Level Upgrade Roadmap":
     """)
 
     st.markdown("""
-    <div style="background:#0d1117;border:1px solid #21262d;border-radius:10px;padding:14px 16px;margin-top:12px;font-size:12px;color:#c9d1d9;line-height:1.8">
-        <strong style="color:#FFC107">Recommendation:</strong>
+    <div class="c-card-dark t-sm" style="margin-top:12px;line-height:1.8">
+        <strong class="tc-yellow">Recommendation:</strong>
         Build the backtester next. It is the highest-leverage upgrade because it will tell us which components actually predict the next 15 days,
         which thresholds are too aggressive, and whether Sidebar 2 or Sidebar 7 is more reliable.
     </div>
     """, unsafe_allow_html=True)
+
+
+elif page == "9️⃣ Institutional Intelligence":
+    st.title("🏛️ Institutional Intelligence")
+    st.caption("Sector rotation flow • 13F institutional tracker • ML signal optimizer — all from free data")
+
+    intel_tab1, intel_tab2, intel_tab3 = st.tabs([
+        "🔄 Sector Rotation Flow",
+        "🏦 13F Institutional Tracker",
+        "🤖 ML Signal Optimizer",
+    ])
+
+    # ── TAB 1: SECTOR ROTATION FLOW ──────────────────────────
+    with intel_tab1:
+        st.subheader("Capital Rotation Map")
+        st.caption("Which sectors are absorbing capital vs bleeding it — based on ETF relative strength, volume surge, and momentum regime")
+
+        with st.spinner("Scanning sector ETFs…"):
+            rotation = fetch_sector_rotation()
+
+        if rotation:
+            rot_cols = st.columns(4)
+            inflows = [r for r in rotation if r["flow_label"] == "INFLOW"]
+            outflows = [r for r in rotation if r["flow_label"] == "OUTFLOW"]
+            rot_cols[0].metric("Sectors Tracked", len(rotation))
+            rot_cols[1].metric("INFLOW Sectors", len(inflows))
+            rot_cols[2].metric("OUTFLOW Sectors", len(outflows))
+            best = rotation[0] if rotation else None
+            rot_cols[3].metric("Strongest", best["sector"] if best else "—", f"{best['flow_score']}" if best else "")
+
+            st.markdown("")
+
+            for r in rotation:
+                flow_c = "#4CAF50" if r["flow_label"] == "INFLOW" else (
+                    "#FFC107" if r["flow_label"] == "NEUTRAL" else (
+                    "#FF9800" if r["flow_label"] == "FADING" else "#f44336"))
+                mom_c = "#4CAF50" if r["momentum"] == "ACCELERATING" else (
+                    "#FFC107" if r["momentum"] in ("DECELERATING", "RECOVERING") else "#f44336")
+                bar_w = max(5, r["flow_score"])
+
+                st.markdown(f"""
+                <div class="c-card-accent" style="border-left-color:{flow_c}">
+                    <div class="d-flex ai-center flex-wrap gap-md">
+                        <div style="min-width:160px" class="t-md fw-9 tc-primary">{r['sector']}</div>
+                        <div class="t-xs tc-muted">{r['etf']}</div>
+                        <div class="t-sm fw-8" style="color:{flow_c};min-width:70px">{r['flow_label']}</div>
+                        <div class="t-sm fw-8" style="color:{mom_c};min-width:100px">{r['momentum']}</div>
+                        <div style="flex:1;min-width:120px">
+                            <div class="c-bar"><div class="c-bar-fill" style="background:{flow_c};width:{bar_w}%"></div></div>
+                        </div>
+                        <div class="t-md fw-9" style="color:{flow_c}">{r['flow_score']}</div>
+                    </div>
+                    <div class="stat-row mt-sm">
+                        <span>5D: <b style="color:{'#4CAF50' if r['ret_5']>0 else '#f44336'}">{r['ret_5']:+.1f}%</b></span>
+                        <span>15D: <b style="color:{'#4CAF50' if r['ret_15']>0 else '#f44336'}">{r['ret_15']:+.1f}%</b></span>
+                        <span>30D: <b style="color:{'#4CAF50' if r['ret_30']>0 else '#f44336'}">{r['ret_30']:+.1f}%</b></span>
+                        <span>60D: <b style="color:{'#4CAF50' if r['ret_60']>0 else '#f44336'}">{r['ret_60']:+.1f}%</b></span>
+                        <span>vs SPY 15D: <b style="color:{'#4CAF50' if r['rel_spy_15']>0 else '#f44336'}">{r['rel_spy_15']:+.1f}%</b></span>
+                        <span>Vol Surge: <b style="color:{'#4CAF50' if r['vol_ratio']>1.1 else '#8a9bb5'}">{r['vol_ratio']}x</b></span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            st.markdown("")
+            rot_df = pd.DataFrame([{
+                "Sector": r["sector"], "ETF": r["etf"],
+                "Flow Score": r["flow_score"], "Flow": r["flow_label"], "Momentum": r["momentum"],
+                "5D %": round(r["ret_5"], 1), "15D %": round(r["ret_15"], 1),
+                "30D %": round(r["ret_30"], 1), "60D %": round(r["ret_60"], 1),
+                "vs SPY 15D": round(r["rel_spy_15"], 1), "Vol Ratio": r["vol_ratio"],
+            } for r in rotation])
+            st.dataframe(rot_df, use_container_width=True, hide_index=True)
+        else:
+            st.warning("Could not fetch sector ETF data. Try again in a moment.")
+
+    # ── TAB 2: 13F INSTITUTIONAL TRACKER ─────────────────────
+    with intel_tab2:
+        st.subheader("Institutional Ownership Scanner")
+        st.caption("Track institutional accumulation, insider buying, and smart money positioning from yfinance 13F data")
+
+        inst_tickers = st.text_input("Enter tickers (comma-separated)", "NVDA, PLTR, RKLB, IONQ, TSLA", key="inst_tickers")
+        ticker_list = [t.strip().upper() for t in inst_tickers.split(",") if t.strip()]
+
+        if st.button("🔍 Scan Institutional Data", key="inst_scan"):
+            if not ticker_list:
+                st.warning("Enter at least one ticker.")
+            else:
+                prog = st.progress(0)
+                all_inst = []
+                for i, tk in enumerate(ticker_list[:15]):
+                    prog.progress((i + 1) / len(ticker_list[:15]))
+                    data = fetch_13f_tracker(tk)
+                    all_inst.append(data)
+
+                st.markdown("")
+
+                summary_data = []
+                for d in all_inst:
+                    acc_count = len(d["accumulating"])
+                    red_count = len(d["reducing"])
+                    buy_count = len(d["insider_buys"])
+                    sell_count = len(d["insider_sells"])
+                    net_ch = d["net_inst_change"]
+                    signal = "🟢 ACCUMULATING" if net_ch > 0.03 else (
+                        "🔴 DISTRIBUTING" if net_ch < -0.03 else "⚪ NEUTRAL")
+                    summary_data.append({
+                        "Ticker": d["ticker"],
+                        "Inst %": f"{d['inst_pct']:.1%}" if d["inst_pct"] > 0 else "—",
+                        "Insider %": f"{d['insider_pct']:.1%}" if d["insider_pct"] > 0 else "—",
+                        "# Institutions": d["inst_count"],
+                        "Accumulating": acc_count,
+                        "Reducing": red_count,
+                        "Insider Buys": buy_count,
+                        "Insider Sells": sell_count,
+                        "Net Change": f"{net_ch:+.1%}" if net_ch != 0 else "—",
+                        "Signal": signal,
+                    })
+
+                st.dataframe(pd.DataFrame(summary_data), use_container_width=True, hide_index=True)
+
+                for d in all_inst:
+                    net_ch = d["net_inst_change"]
+                    sig_c = "#4CAF50" if net_ch > 0.03 else ("#f44336" if net_ch < -0.03 else "#FFC107")
+                    signal_text = "ACCUMULATING" if net_ch > 0.03 else ("DISTRIBUTING" if net_ch < -0.03 else "NEUTRAL")
+
+                    with st.expander(f"📊 {d['ticker']} — {signal_text} ({net_ch:+.1%} net change)"):
+                        if d["top_holders"]:
+                            st.markdown("**Top Institutional Holders:**")
+                            holder_rows = []
+                            for h in d["top_holders"]:
+                                ch_c = "🟢" if h["change"] > 0.02 else ("🔴" if h["change"] < -0.02 else "⚪")
+                                holder_rows.append({
+                                    "Status": ch_c,
+                                    "Holder": h["name"],
+                                    "% Held": f"{h['pct']:.2%}" if h["pct"] > 0 else "—",
+                                    "Shares": f"{h['shares']:,}",
+                                    "Value ($M)": f"{h['value']/1e6:.1f}" if h["value"] > 0 else "—",
+                                    "Qtr Change": f"{h['change']:+.1%}" if h["change"] != 0 else "—",
+                                    "Date": h["date"],
+                                })
+                            st.dataframe(pd.DataFrame(holder_rows), use_container_width=True, hide_index=True)
+
+                        if d["insider_buys"]:
+                            st.markdown("**🟢 Recent Insider Purchases:**")
+                            for txn in d["insider_buys"][:5]:
+                                st.markdown(f"- **{txn['insider']}** ({txn['position']}) — {txn['shares']:,} shares, ${txn['value']:,.0f} — {txn['date']}")
+
+                        if d["insider_sells"]:
+                            st.markdown("**🔴 Recent Insider Sales:**")
+                            for txn in d["insider_sells"][:5]:
+                                st.markdown(f"- **{txn['insider']}** ({txn['position']}) — {txn['shares']:,} shares, ${txn['value']:,.0f} — {txn['date']}")
+
+                        if not d["top_holders"] and not d["insider_buys"] and not d["insider_sells"]:
+                            st.info("No institutional data available for this ticker.")
+
+    # ── TAB 3: ML SIGNAL OPTIMIZER ───────────────────────────
+    with intel_tab3:
+        st.subheader("Signal Combo Intelligence")
+        st.caption("Learns from backtesting which signal combinations produce the best 15-day returns — your ML edge")
+
+        ml_tickers_input = st.text_input(
+            "Tickers to analyze (comma-separated)",
+            "NVDA, PLTR, RKLB, AMD, TSLA, IONQ, AVGO, COIN, META, AMZN",
+            key="ml_tickers",
+        )
+        ml_lookback = st.selectbox("Lookback period", [180, 252, 365], index=1, format_func=lambda x: f"{x} days (~{x//30} months)", key="ml_lookback")
+
+        if st.button("🧠 Run ML Optimizer", key="ml_run"):
+            ml_list = [t.strip().upper() for t in ml_tickers_input.split(",") if t.strip()]
+            if len(ml_list) < 3:
+                st.warning("Enter at least 3 tickers for meaningful analysis.")
+            else:
+                with st.spinner("Running backtests and analyzing signal combos… this may take 1-2 minutes"):
+                    ml_result = ml_signal_optimizer(tuple(sorted(ml_list)), lookback_days=ml_lookback)
+
+                if ml_result is None:
+                    st.warning("Not enough backtest data. Try more tickers or longer lookback.")
+                else:
+                    ml_c = st.columns(4)
+                    ml_c[0].metric("Total Samples", ml_result["total_samples"])
+                    ml_c[1].metric("Overall Win Rate", f"{ml_result['overall_win_rate']}%")
+                    ml_c[2].metric("Overall Avg Return", f"{ml_result['overall_avg']:+.1f}%")
+                    best = ml_result["best"]
+                    ml_c[3].metric("Best Combo", best["Signal Combo"] if best else "—",
+                                   f"{best['Avg Return %']:+.1f}%" if best else "")
+
+                    st.markdown("")
+
+                    if ml_result["best"]:
+                        b = ml_result["best"]
+                        grade_c = "#4CAF50" if b["Grade"] in ("A+", "A") else ("#FFC107" if b["Grade"] == "B" else "#f44336")
+                        st.markdown(f"""
+                        <div class="c-signal-green">
+                            <div class="t-md fw-9 tc-green">🏆 BEST SIGNAL COMBO: {b['Signal Combo']}</div>
+                            <div class="stat-row mt-sm t-sm tc-secondary" style="gap:24px">
+                                <span>Avg Return: <b class="tc-green">{b['Avg Return %']:+.1f}%</b></span>
+                                <span>Win Rate: <b>{b['Win Rate %']}%</b></span>
+                                <span>Big Wins: <b class="tc-green">{b['Big Win %']}%</b></span>
+                                <span>Big Losses: <b class="tc-red">{b['Big Loss %']}%</b></span>
+                                <span>Sharpe: <b>{b['Sharpe']}</b></span>
+                                <span>Grade: <b style="color:{grade_c}">{b['Grade']}</b></span>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                    if ml_result["worst"] and ml_result["worst"]["Avg Return %"] < 0:
+                        w = ml_result["worst"]
+                        st.markdown(f"""
+                        <div class="c-signal-red">
+                            <div class="t-md fw-9 tc-red">⚠️ WORST SIGNAL COMBO: {w['Signal Combo']}</div>
+                            <div class="stat-row mt-sm t-sm tc-secondary" style="gap:24px">
+                                <span>Avg Return: <b class="tc-red">{w['Avg Return %']:+.1f}%</b></span>
+                                <span>Win Rate: <b>{w['Win Rate %']}%</b></span>
+                                <span>Big Losses: <b class="tc-red">{w['Big Loss %']}%</b></span>
+                                <span>Sharpe: <b>{w['Sharpe']}</b></span>
+                                <span>Grade: <b class="tc-red">{w['Grade']}</b></span>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                    st.markdown("### All Signal Combos Ranked")
+                    combo_df = pd.DataFrame(ml_result["combos"])
+                    st.dataframe(combo_df, use_container_width=True, hide_index=True)
+
+                    st.markdown("")
+                    st.markdown("""
+                    <div class="c-banner t-sm">
+                        <strong class="tc-blue">How to use this:</strong>
+                        The ML optimizer tests every signal combination against historical 15-day outcomes.
+                        <b>A+ / A grade combos</b> are your highest-conviction entry criteria.
+                        <b>F grade combos</b> are traps to avoid.
+                        Use the best combo as your primary filter on Page 2 and Page 7.
+                    </div>
+                    """, unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════
