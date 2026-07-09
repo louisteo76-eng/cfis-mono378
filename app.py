@@ -2361,66 +2361,80 @@ def project_15d_move(hist, breakout=0, exhaust=0, big_money=0, confirmation=50):
 
     base = 0
 
-    # Recent momentum — respect the trend, don't fight it
+    # Recent momentum — ride the wave, don't fight it
     if ret_5 > 0:
-        base += min(ret_5 * 0.55, 12)
+        base += min(ret_5 * 0.8, 20)
     else:
-        base += max(ret_5 * 0.4, -5)
+        base += max(ret_5 * 0.3, -4)
 
-    # 30D trend — sustained moves carry more weight
-    if ret_30 > 20:
-        base += 4
+    # 15D momentum — sustained runs compound
+    if ret_15 > 30:
+        base += 8
+    elif ret_15 > 15:
+        base += 5
+    elif ret_15 > 8:
+        base += 3
+
+    # 30D trend — capital migration is persistent
+    if ret_30 > 30:
+        base += 8
+    elif ret_30 > 20:
+        base += 5
     elif ret_30 > 10:
-        base += 2
+        base += 3
 
-    # Breakout overlay — strong breakouts deserve full credit
-    base += breakout * 0.5
+    # Breakout overlay — full credit, breakouts are the signal
+    base += breakout * 0.8
 
     # Exhaustion drags projection down — but only hard exhaustion
-    if exhaust <= -8:
-        base += exhaust * 0.5
-    elif exhaust <= -3:
-        base += exhaust * 0.3
+    if exhaust <= -10:
+        base += exhaust * 0.4
+    elif exhaust <= -5:
+        base += exhaust * 0.25
 
-    # Big money lifts projection — institutions don't buy to lose
+    # Big money — institutions don't buy to lose
     if big_money >= 30:
-        base += 10
+        base += 14
     elif big_money >= 20:
-        base += 7
+        base += 10
     elif big_money >= 10:
-        base += 4
+        base += 6
     elif big_money >= 5:
-        base += 2
-
-    # Confirmation boost
-    if confirmation >= 85:
-        base += 5
-    elif confirmation >= 75:
         base += 3
-    elif confirmation >= 65:
-        base += 1.5
+
+    # Confirmation — high conviction = higher projection
+    if confirmation >= 90:
+        base += 8
+    elif confirmation >= 80:
+        base += 6
+    elif confirmation >= 70:
+        base += 4
+    elif confirmation >= 60:
+        base += 2
     elif confirmation < 40:
         base -= 2
 
-    # Mean-reversion — only penalize extreme overextension, not winners
-    if dist_20 > 30:
+    # Mean-reversion — only penalize extreme blowoff, winners keep winning
+    if dist_20 > 40:
         base -= 4
-    elif dist_20 > 20:
+    elif dist_20 > 30:
         base -= 2
-    elif 0 <= dist_20 <= 12:
-        base += 1.5
+    elif 0 <= dist_20 <= 15:
+        base += 2
 
-    # Volume health — volume surge is a strong confirmation
+    # Volume health — volume surge is institutional confirmation
     if len(volume) >= 20:
         vol_10 = float(volume.iloc[-10:].mean())
         vol_20 = float(volume.iloc[-20:].mean())
         if vol_20 > 0:
             vr = vol_10 / vol_20
-            if vr > 2.0:
+            if vr > 2.5:
+                base += 6
+            elif vr > 1.5:
                 base += 4
-            elif vr > 1.3:
+            elif vr > 1.2:
                 base += 2
-            elif vr < 0.6:
+            elif vr < 0.5:
                 base -= 2
 
     # Relative strength vs SPY — outperformers keep outperforming
@@ -2428,18 +2442,20 @@ def project_15d_move(hist, breakout=0, exhaust=0, big_money=0, confirmation=50):
     if len(close) >= 20:
         stock_mom_20 = (price - float(close.iloc[-20])) / float(close.iloc[-20]) * 100
         rs = stock_mom_20 - spy_mom.get("mom_20", 0)
-        if rs > 15:
+        if rs > 20:
+            base += 6
+        elif rs > 10:
             base += 4
-        elif rs > 8:
+        elif rs > 5:
             base += 2
         elif rs < -10:
             base -= 2
 
     # Aggressive caps — let winners project big
-    proj = round(max(-15, min(50, base)), 1)
-    bull = round(max(proj + 5, proj * 1.6 if proj > 0 else proj + 3), 1)
-    bear = round(min(proj - 4, proj * 0.3 if proj > 0 else proj - 3), 1)
-    bull = min(bull, 60)
+    proj = round(max(-15, min(70, base)), 1)
+    bull = round(max(proj + 8, proj * 1.8 if proj > 0 else proj + 4), 1)
+    bear = round(min(proj - 5, proj * 0.3 if proj > 0 else proj - 3), 1)
+    bull = min(bull, 85)
     bear = max(bear, -20)
 
     return proj, bear, bull
