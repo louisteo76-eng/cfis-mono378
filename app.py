@@ -2451,12 +2451,29 @@ def project_15d_move(hist, breakout=0, exhaust=0, big_money=0, confirmation=50):
         elif rs < -10:
             base -= 2
 
-    # Aggressive caps — let winners project big
-    proj = round(max(-15, min(70, base)), 1)
-    bull = round(max(proj + 8, proj * 1.8 if proj > 0 else proj + 4), 1)
-    bear = round(min(proj - 5, proj * 0.3 if proj > 0 else proj - 3), 1)
-    bull = min(bull, 85)
-    bear = max(bear, -20)
+    # CONVICTION MULTIPLIER — when multiple signals fire together, compound the edge
+    green_count = 0
+    if breakout >= 5: green_count += 1
+    if exhaust >= 0: green_count += 1
+    if big_money >= 10: green_count += 1
+    if confirmation >= 75: green_count += 1
+    if ret_15 > 5: green_count += 1
+    if ret_30 > 10: green_count += 1
+
+    if green_count >= 6:
+        base *= 2.0
+    elif green_count >= 5:
+        base *= 1.7
+    elif green_count >= 4:
+        base *= 1.4
+    elif green_count >= 3:
+        base *= 1.2
+
+    # No cap — let the math speak. Miracle stocks project big.
+    proj = round(max(-20, base), 1)
+    bull = round(max(proj + 10, proj * 2.0 if proj > 0 else proj + 5), 1)
+    bear = round(min(proj - 6, proj * 0.25 if proj > 0 else proj - 4), 1)
+    bear = max(bear, -25)
 
     return proj, bear, bull
 
