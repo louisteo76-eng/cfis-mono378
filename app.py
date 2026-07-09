@@ -2355,75 +2355,385 @@ def project_15d_move(hist, breakout=0, exhaust=0, big_money=0, confirmation=50):
 
     ret_15 = (price - float(close.iloc[-15])) / float(close.iloc[-15]) * 100 if len(close) >= 15 else 0
     ret_5 = (price - float(close.iloc[-5])) / float(close.iloc[-5]) * 100 if len(close) >= 5 else 0
+    ret_30 = (price - float(close.iloc[-30])) / float(close.iloc[-30]) * 100 if len(close) >= 30 else 0
     sma_20 = float(close.tail(20).mean())
     dist_20 = ((price - sma_20) / sma_20 * 100) if sma_20 else 0
 
     base = 0
 
-    # Recent momentum — dampened, not extrapolated raw
+    # Recent momentum — respect the trend, don't fight it
     if ret_5 > 0:
-        base += min(ret_5 * 0.35, 5)
+        base += min(ret_5 * 0.55, 12)
     else:
-        base += max(ret_5 * 0.5, -6)
+        base += max(ret_5 * 0.4, -5)
 
-    # Breakout overlay contribution
-    base += breakout * 0.3
+    # 30D trend — sustained moves carry more weight
+    if ret_30 > 20:
+        base += 4
+    elif ret_30 > 10:
+        base += 2
 
-    # Exhaustion drags projection down
-    base += exhaust * 0.5
+    # Breakout overlay — strong breakouts deserve full credit
+    base += breakout * 0.5
+
+    # Exhaustion drags projection down — but only hard exhaustion
+    if exhaust <= -8:
+        base += exhaust * 0.5
+    elif exhaust <= -3:
+        base += exhaust * 0.3
 
     # Big money lifts projection — institutions don't buy to lose
-    if big_money >= 20:
-        base += 6
+    if big_money >= 30:
+        base += 10
+    elif big_money >= 20:
+        base += 7
     elif big_money >= 10:
-        base += 3.5
+        base += 4
     elif big_money >= 5:
-        base += 1.5
+        base += 2
 
     # Confirmation boost
-    if confirmation >= 80:
+    if confirmation >= 85:
+        base += 5
+    elif confirmation >= 75:
         base += 3
     elif confirmation >= 65:
         base += 1.5
     elif confirmation < 40:
         base -= 2
 
-    # Mean-reversion pressure — overextended stocks pull back
-    if dist_20 > 20:
+    # Mean-reversion — only penalize extreme overextension, not winners
+    if dist_20 > 30:
         base -= 4
-    elif dist_20 > 12:
+    elif dist_20 > 20:
         base -= 2
-    elif -3 <= dist_20 <= 8:
-        base += 1
+    elif 0 <= dist_20 <= 12:
+        base += 1.5
 
-    # Volume health — rising volume confirms, falling questions
+    # Volume health — volume surge is a strong confirmation
     if len(volume) >= 20:
         vol_10 = float(volume.iloc[-10:].mean())
         vol_20 = float(volume.iloc[-20:].mean())
         if vol_20 > 0:
             vr = vol_10 / vol_20
-            if vr > 1.5:
+            if vr > 2.0:
+                base += 4
+            elif vr > 1.3:
                 base += 2
-            elif vr < 0.7:
+            elif vr < 0.6:
                 base -= 2
 
-    # Relative strength vs SPY
+    # Relative strength vs SPY — outperformers keep outperforming
     spy_mom = _get_spy_momentum()
     if len(close) >= 20:
         stock_mom_20 = (price - float(close.iloc[-20])) / float(close.iloc[-20]) * 100
         rs = stock_mom_20 - spy_mom.get("mom_20", 0)
-        if rs > 10:
+        if rs > 15:
+            base += 4
+        elif rs > 8:
             base += 2
         elif rs < -10:
             base -= 2
 
-    proj = round(max(-12, min(25, base)), 1)
-    bull = round(max(proj + 3, proj * 1.4 if proj > 0 else proj + 2), 1)
-    bear = round(min(proj - 3, proj * 0.5 if proj > 0 else proj - 2), 1)
-    bull = min(bull, 30)
-    bear = max(bear, -15)
+    # Aggressive caps — let winners project big
+    proj = round(max(-15, min(50, base)), 1)
+    bull = round(max(proj + 5, proj * 1.6 if proj > 0 else proj + 3), 1)
+    bear = round(min(proj - 4, proj * 0.3 if proj > 0 else proj - 3), 1)
+    bull = min(bull, 60)
+    bear = max(bear, -20)
 
     return proj, bear, bull
+
+
+# ─────────────────────────────────────────────────────────────
+# EARNINGS DATE RISK DETECTOR
+# Warns when earnings are within 15-30 days — IV crush risk
+# for options, gap risk for equity positions.
+# ─────────────────────────────────────────────────────────────
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_earnings_risk(ticker):
+    try:
+        t = yf.Ticker(ticker)
+        cal = t.calendar
+        if cal is None:
+            return {"ticker": ticker, "has_earnings": False}
+
+        if isinstance(cal, pd.DataFrame):
+            if "Earnings Date" in cal.columns:
+                dates = cal["Earnings Date"].tolist()
+            elif "Earnings Date" in cal.index:
+                dates = cal.loc["Earnings Date"].tolist()
+            else:
+                return {"ticker": ticker, "has_earnings": False}
+        elif isinstance(cal, dict):
+            dates = cal.get("Earnings Date", [])
+            if not isinstance(dates, list):
+                dates = [dates]
+        else:
+            return {"ticker": ticker, "has_earnings": False}
+
+        from datetime import date as dt_date
+        today = dt_date.today()
+        future_dates = []
+        for d in dates:
+            if d is None:
+                continue
+            if isinstance(d, str):
+                try:
+                    d = datetime.strptime(d, "%Y-%m-%d").date()
+                except Exception:
+                    continue
+            elif hasattr(d, "date"):
+                d = d.date()
+            elif not isinstance(d, dt_date):
+                continue
+            days_away = (d - today).days
+            if days_away >= -2:
+                future_dates.append((d, days_away))
+
+        if not future_dates:
+            return {"ticker": ticker, "has_earnings": False}
+
+        future_dates.sort(key=lambda x: x[1])
+        next_date, days_to = future_dates[0]
+
+        if days_to <= 3:
+            risk = "IMMINENT"
+            risk_level = 5
+        elif days_to <= 7:
+            risk = "HIGH"
+            risk_level = 4
+        elif days_to <= 15:
+            risk = "MODERATE"
+            risk_level = 3
+        elif days_to <= 30:
+            risk = "LOW"
+            risk_level = 2
+        else:
+            risk = "CLEAR"
+            risk_level = 1
+
+        iv_crush_warning = days_to <= 7
+
+        return {
+            "ticker": ticker,
+            "has_earnings": True,
+            "next_date": str(next_date),
+            "days_to": days_to,
+            "risk": risk,
+            "risk_level": risk_level,
+            "iv_crush_warning": iv_crush_warning,
+        }
+    except Exception:
+        return {"ticker": ticker, "has_earnings": False}
+
+
+# ─────────────────────────────────────────────────────────────
+# REAL OPTIONS CHAIN SCANNER
+# Pulls actual IV, OI, bid-ask spread, volume for nearest
+# 30-60 DTE contracts. Replaces proxy with evidence.
+# ─────────────────────────────────────────────────────────────
+
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_options_intelligence(ticker):
+    try:
+        t = yf.Ticker(ticker)
+        exps = t.options
+        if not exps:
+            return {"ticker": ticker, "has_options": False}
+
+        from datetime import date as dt_date
+        today = dt_date.today()
+        best_exp = None
+        best_dte = 999
+        for exp_str in exps:
+            exp_date = datetime.strptime(exp_str, "%Y-%m-%d").date()
+            dte = (exp_date - today).days
+            if 20 <= dte <= 75 and dte < best_dte:
+                best_dte = dte
+                best_exp = exp_str
+            elif 14 <= dte <= 90 and best_exp is None:
+                best_dte = dte
+                best_exp = exp_str
+
+        if not best_exp:
+            if exps:
+                best_exp = exps[0]
+                best_dte = (datetime.strptime(exps[0], "%Y-%m-%d").date() - today).days
+            else:
+                return {"ticker": ticker, "has_options": False}
+
+        chain = t.option_chain(best_exp)
+        calls = chain.calls
+        puts = chain.puts
+
+        price = float(t.fast_info.get("lastPrice", 0) or t.info.get("currentPrice", 0) or 0)
+        if price <= 0:
+            return {"ticker": ticker, "has_options": False}
+
+        # Find ATM call and put
+        if calls.empty:
+            return {"ticker": ticker, "has_options": False}
+
+        calls["dist"] = abs(calls["strike"] - price)
+        atm_call = calls.loc[calls["dist"].idxmin()]
+
+        call_iv = float(atm_call.get("impliedVolatility", 0))
+        call_oi = int(atm_call.get("openInterest", 0) or 0)
+        call_vol = int(atm_call.get("volume", 0) or 0)
+        call_bid = float(atm_call.get("bid", 0) or 0)
+        call_ask = float(atm_call.get("ask", 0) or 0)
+        call_spread = (call_ask - call_bid) / call_ask * 100 if call_ask > 0 else 100
+
+        put_iv = 0
+        put_oi = 0
+        if not puts.empty:
+            puts["dist"] = abs(puts["strike"] - price)
+            atm_put = puts.loc[puts["dist"].idxmin()]
+            put_iv = float(atm_put.get("impliedVolatility", 0))
+            put_oi = int(atm_put.get("openInterest", 0) or 0)
+
+        avg_iv = (call_iv + put_iv) / 2 if put_iv > 0 else call_iv
+        pc_ratio = put_oi / call_oi if call_oi > 0 else 0
+
+        total_call_oi = int(calls["openInterest"].fillna(0).sum())
+        total_put_oi = int(puts["openInterest"].fillna(0).sum())
+        total_call_vol = int(calls["volume"].fillna(0).sum())
+
+        # OTM calls with big OI = bullish bets
+        otm_calls = calls[calls["strike"] > price * 1.05]
+        otm_call_oi = int(otm_calls["openInterest"].fillna(0).sum()) if not otm_calls.empty else 0
+
+        # Quality score
+        quality = 50
+        if call_oi >= 1000: quality += 10
+        elif call_oi >= 500: quality += 5
+        if total_call_vol >= 500: quality += 10
+        elif total_call_vol >= 100: quality += 5
+        if call_spread < 5: quality += 10
+        elif call_spread < 15: quality += 5
+        elif call_spread > 40: quality -= 10
+        if avg_iv > 0.3 and avg_iv < 0.8: quality += 5
+        elif avg_iv > 1.2: quality -= 5
+        if otm_call_oi > total_call_oi * 0.3: quality += 10
+        quality = max(0, min(100, quality))
+
+        iv_label = "LOW" if avg_iv < 0.3 else ("NORMAL" if avg_iv < 0.6 else ("ELEVATED" if avg_iv < 1.0 else "EXTREME"))
+
+        return {
+            "ticker": ticker,
+            "has_options": True,
+            "expiry": best_exp,
+            "dte": best_dte,
+            "atm_strike": float(atm_call["strike"]),
+            "call_iv": round(call_iv * 100, 1),
+            "put_iv": round(put_iv * 100, 1),
+            "avg_iv": round(avg_iv * 100, 1),
+            "iv_label": iv_label,
+            "call_oi": call_oi,
+            "call_vol": call_vol,
+            "call_spread_pct": round(call_spread, 1),
+            "total_call_oi": total_call_oi,
+            "total_put_oi": total_put_oi,
+            "total_call_vol": total_call_vol,
+            "pc_ratio": round(pc_ratio, 2),
+            "otm_call_oi": otm_call_oi,
+            "quality": quality,
+        }
+    except Exception:
+        return {"ticker": ticker, "has_options": False}
+
+
+# ─────────────────────────────────────────────────────────────
+# NEWS / CATALYST VELOCITY SCANNER
+# Scores how fresh and dense recent news is. Stale catalyst =
+# move already priced in. Fresh catalyst = move may continue.
+# ─────────────────────────────────────────────────────────────
+
+@st.cache_data(ttl=900, show_spinner=False)
+def fetch_news_velocity(ticker):
+    result = {
+        "ticker": ticker, "headline_count": 0, "fresh_count": 0,
+        "velocity": 0, "velocity_label": "STALE", "headlines": [],
+    }
+
+    # Source 1: FMP news
+    try:
+        fmp_key = os.getenv("FMP_API_KEY") or st.secrets.get("FMP_API_KEY", "")
+        if fmp_key:
+            resp = requests.get(
+                f"https://financialmodelingprep.com/stable/news/stock?symbol={ticker}&limit=20",
+                params={"apikey": fmp_key}, timeout=8,
+            )
+            if resp.status_code == 200:
+                articles = resp.json()
+                if isinstance(articles, list):
+                    for a in articles:
+                        title = a.get("title", "")
+                        pub = a.get("publishedDate", "")[:10]
+                        result["headlines"].append({"title": title, "date": pub, "source": "FMP"})
+    except Exception:
+        pass
+
+    # Source 2: Finnhub news
+    try:
+        fh_key = os.getenv("FINNHUB_API_KEY") or st.secrets.get("FINNHUB_API_KEY", "")
+        if fh_key:
+            from_date = (datetime.now() - timedelta(days=14)).strftime("%Y-%m-%d")
+            to_date = datetime.now().strftime("%Y-%m-%d")
+            resp = requests.get(
+                f"https://finnhub.io/api/v1/company-news",
+                params={"symbol": ticker, "from": from_date, "to": to_date, "token": fh_key},
+                timeout=8,
+            )
+            if resp.status_code == 200:
+                articles = resp.json()
+                if isinstance(articles, list):
+                    for a in articles[:15]:
+                        title = a.get("headline", "")
+                        pub = datetime.fromtimestamp(a.get("datetime", 0)).strftime("%Y-%m-%d") if a.get("datetime") else ""
+                        if title and not any(h["title"] == title for h in result["headlines"]):
+                            result["headlines"].append({"title": title, "date": pub, "source": "Finnhub"})
+    except Exception:
+        pass
+
+    if not result["headlines"]:
+        return result
+
+    from datetime import date as dt_date
+    today = dt_date.today()
+    total = len(result["headlines"])
+    fresh = 0
+    for h in result["headlines"]:
+        try:
+            d = datetime.strptime(h["date"], "%Y-%m-%d").date()
+            if (today - d).days <= 3:
+                fresh += 1
+        except Exception:
+            pass
+
+    result["headline_count"] = total
+    result["fresh_count"] = fresh
+
+    # Velocity = freshness × density
+    density = min(total / 5, 3)
+    freshness = min(fresh / 2, 3)
+    velocity = round((density + freshness) * 16.7)
+    velocity = max(0, min(100, velocity))
+    result["velocity"] = velocity
+
+    if velocity >= 70:
+        result["velocity_label"] = "HOT"
+    elif velocity >= 45:
+        result["velocity_label"] = "ACTIVE"
+    elif velocity >= 20:
+        result["velocity_label"] = "MODERATE"
+    else:
+        result["velocity_label"] = "STALE"
+
+    result["headlines"] = result["headlines"][:10]
+    return result
 
 
 # ─────────────────────────────────────────────────────────────
@@ -9187,6 +9497,27 @@ def scan_radar(universe):
             r["proj_bear"] = proj_bear
             r["proj_bull"] = proj_bull
             r["proj_target"] = round(r["price"] * (1 + proj / 100), 2)
+            # Earnings risk
+            er = fetch_earnings_risk(r["ticker"])
+            r["earnings_days"] = er.get("days_to", 999)
+            r["earnings_risk"] = er.get("risk", "—")
+            r["earnings_date"] = er.get("next_date", "—")
+            r["iv_crush_warning"] = er.get("iv_crush_warning", False)
+            # Options intelligence
+            oi = fetch_options_intelligence(r["ticker"])
+            r["opt_iv"] = oi.get("avg_iv", 0)
+            r["opt_iv_label"] = oi.get("iv_label", "—")
+            r["opt_quality"] = oi.get("quality", 0)
+            r["opt_oi"] = oi.get("call_oi", 0)
+            r["opt_spread"] = oi.get("call_spread_pct", 0)
+            r["opt_pc_ratio"] = oi.get("pc_ratio", 0)
+            r["opt_dte"] = oi.get("dte", 0)
+            # News velocity
+            nv = fetch_news_velocity(r["ticker"])
+            r["news_velocity"] = nv.get("velocity", 0)
+            r["news_label"] = nv.get("velocity_label", "STALE")
+            r["news_fresh"] = nv.get("fresh_count", 0)
+            r["news_total"] = nv.get("headline_count", 0)
         except Exception:
             pass
     return results
@@ -10249,7 +10580,20 @@ elif page == "2️⃣ 15-Day Up Signals":
             bm_c = "#00E676" if bm >= 20 else ("#4CAF50" if bm >= 10 else ("#FFC107" if bm >= 5 else "#78909C"))
             bm_sigs = r.get("big_money_signals", [])
             p15 = r.get("proj_15d", 0)
-            p15_c = "#00E676" if p15 >= 8 else ("#4CAF50" if p15 >= 4 else ("#FFC107" if p15 >= 1 else ("#78909C" if p15 >= 0 else "#ef5350")))
+            p15_c = "#00E676" if p15 >= 15 else ("#4CAF50" if p15 >= 6 else ("#FFC107" if p15 >= 1 else ("#78909C" if p15 >= 0 else "#ef5350")))
+            # Earnings risk
+            e_risk = r.get("earnings_risk", "—")
+            e_days = r.get("earnings_days", 999)
+            e_c = "#f44336" if e_risk in ("IMMINENT", "HIGH") else ("#FFC107" if e_risk == "MODERATE" else "#4CAF50")
+            e_text = f"{e_days}D {e_risk}" if e_risk not in ("—", "CLEAR") else ("CLEAR" if e_risk == "CLEAR" else "—")
+            # Options IV
+            o_iv = r.get("opt_iv", 0)
+            o_iv_c = "#f44336" if o_iv > 100 else ("#FFC107" if o_iv > 60 else ("#4CAF50" if o_iv > 0 else "#78909C"))
+            o_qual = r.get("opt_quality", 0)
+            # News velocity
+            nv = r.get("news_velocity", 0)
+            nv_c = "#00E676" if nv >= 70 else ("#4CAF50" if nv >= 45 else ("#FFC107" if nv >= 20 else "#78909C"))
+            nv_label = r.get("news_label", "STALE")
             p15_target = r.get("proj_target", 0)
             p15_range = f"{r.get('proj_bear', 0):+.1f}% to {r.get('proj_bull', 0):+.1f}%"
             if r["hot_score"] >= 78 and confirm >= 75:
@@ -10287,11 +10631,14 @@ elif page == "2️⃣ 15-Day Up Signals":
                         <div style="min-width:78px;text-align:center"><div class="t-md fw-9" style="color:{ba_c}">{ba:+d} {ba_label}</div><div class="t-xs tc-dim" style="font-size:10px">BREAKOUT</div></div>
                         <div style="min-width:78px;text-align:center"><div class="t-md fw-9" style="color:{ex_c}">{ex:+d} {ex_label}</div><div class="t-xs tc-dim" style="font-size:10px">EXHAUST</div></div>
                         <div style="min-width:78px;text-align:center"><div class="t-md fw-9" style="color:{bm_c}">{bm}</div><div class="t-xs tc-dim" style="font-size:10px">BIG MONEY</div></div>
+                        <div style="min-width:78px;text-align:center"><div class="t-md fw-9" style="color:{e_c}">{e_text}</div><div class="t-xs tc-dim" style="font-size:10px">EARNINGS</div></div>
+                        <div style="min-width:78px;text-align:center"><div class="t-md fw-9" style="color:{o_iv_c}">{o_iv:.0f}%</div><div class="t-xs tc-dim" style="font-size:10px">IV · Q{o_qual}</div></div>
+                        <div style="min-width:78px;text-align:center"><div class="t-md fw-9" style="color:{nv_c}">{nv} {nv_label}</div><div class="t-xs tc-dim" style="font-size:10px">NEWS</div></div>
                         <div style="min-width:98px;text-align:center"><div class="t-lg fw-9" style="color:{p15_c}">{p15:+.1f}%</div><div class="t-xs fw-7" style="color:{p15_c}">${p15_target:.2f}</div><div class="t-xs tc-dim" style="font-size:10px">15D PROJ</div></div>
                         <div style="flex:1;text-align:right"><span class="pill" style="background:{score_c};color:#000">{action}</span></div>
                     </div>
                     <div class="detail-line mt-sm">{tags}</div>
-                    <div class="detail-line">Projection range: {p15_range} · Confirm checks: {r.get('up_days_10', 0)}/10 up-days · {r.get('dist_20', 0):+.1f}% vs 20D avg · volume {r.get('vol_spike', 1):.1f}x</div>
+                    <div class="detail-line">Proj: {p15_range} · Up-days: {r.get('up_days_10', 0)}/10 · Dist 20D: {r.get('dist_20', 0):+.1f}% · Vol: {r.get('vol_spike', 1):.1f}x{' · ⚠️ IV CRUSH RISK' if r.get('iv_crush_warning') else ''}{' · Earnings: ' + r.get('earnings_date', '') if r.get('earnings_date', '—') != '—' else ''} · OI: {r.get('opt_oi', 0):,} · Spread: {r.get('opt_spread', 0):.0f}% · P/C: {r.get('opt_pc_ratio', 0):.2f}</div>
                     {"<div class='detail-line' style='color:#00E676'>Big Money: " + " · ".join(bm_sigs[:3]) + "</div>" if bm_sigs else ""}
                     <div class="t-sm tc-secondary mt-sm" style="line-height:1.6">{r['reason']}</div>
                 </div>
@@ -10628,17 +10975,18 @@ elif page == "8️⃣ A-Level Upgrade Roadmap":
 
     st.markdown("""
     <div class="c-banner t-sm">
-        <strong class="tc-green">Current rating: A- (87/100)</strong> — up from B/B+ (78).
-        Backtesting, exhaustion penalty, big money detector, 15D projection, sector rotation, 13F tracker, ML optimizer, and design system all shipped.
-        To reach A+ the remaining gaps are real options data, earnings date risk, and news velocity.
+        <strong class="tc-green">Current rating: A (93/100)</strong> — up from B/B+ (78).
+        All major engines shipped: backtesting, exhaustion penalty, big money detector, aggressive 15D projection,
+        sector rotation, 13F tracker, ML optimizer, design system, earnings date risk, real options IV/OI, and news velocity.
+        Remaining refinements: position sizing rules, confidence band calibration from backtest data.
     </div>
     """, unsafe_allow_html=True)
 
     score_cols = st.columns(4)
-    score_cols[0].metric("Current CFIS", "87/100", "A-")
-    score_cols[1].metric("A+ Target", "93/100", "+6 pts")
-    score_cols[2].metric("Biggest Gap", "Options IV", "real chain data")
-    score_cols[3].metric("Last Build", "Page 9", "Inst Intelligence")
+    score_cols[0].metric("Current CFIS", "93/100", "A")
+    score_cols[1].metric("A+ Target", "97/100", "+4 pts")
+    score_cols[2].metric("Biggest Gap", "Position Sizing", "risk tiers")
+    score_cols[3].metric("Last Build", "Options IV + News", "real data")
 
     st.divider()
 
@@ -10716,31 +11064,31 @@ elif page == "8️⃣ A-Level Upgrade Roadmap":
             "build": "Built: .t-xs/.t-sm/.t-md/.t-lg/.t-xl, .c-card/.c-banner/.c-signal, dark theme in config.toml.",
         },
         {
-            "name": "Real options chain liquidity and IV",
-            "status": "Proxy now",
+            "name": "Real options chain IV, OI, spread, quality",
+            "status": "DONE",
             "priority": "P1",
             "impact": "+2 pts",
-            "why": "Options conviction should know open interest, bid/ask spread, volume, IV rank, skew, and realistic contract liquidity.",
-            "source": "yfinance option_chain for focused tickers first; later Polygon / Tradier / ORATS if available.",
-            "build": "Only inspect options for top 20 overlay names, not the full universe. Add IV, spread %, OI, volume, and nearest 30-60 DTE contract quality.",
+            "why": "Options conviction needs real IV, open interest, bid-ask spread, and contract quality — not proxy estimates.",
+            "source": "yfinance option_chain — ATM call/put for nearest 30-60 DTE expiry.",
+            "build": "Built: fetch_options_intelligence() returns IV %, OI, spread %, quality score (0-100), P/C ratio. Shown on Page 2.",
         },
         {
             "name": "News and catalyst velocity",
-            "status": "Weak",
+            "status": "DONE",
             "priority": "P1",
             "impact": "+2 pts",
-            "why": "Short-term moves often come from fresh catalysts. The system needs to know whether news is accelerating or stale.",
-            "source": "FMP news, Finnhub news, Yahoo headlines, Reddit/social scanner.",
-            "build": "Score headline count, recency, catalyst category, sentiment, and whether the story is new within 72 hours.",
+            "why": "Short-term moves often come from fresh catalysts. Stale catalyst = move already priced in.",
+            "source": "FMP news API + Finnhub company-news. Deduplicated, scored by freshness × density.",
+            "build": "Built: fetch_news_velocity() returns velocity score (0-100), HOT/ACTIVE/MODERATE/STALE label, fresh count. Shown on Page 2.",
         },
         {
-            "name": "Earnings and date risk",
-            "status": "Missing",
+            "name": "Earnings date risk and IV crush warning",
+            "status": "DONE",
             "priority": "P1",
             "impact": "+2 pts",
-            "why": "Options near earnings can explode or die from IV crush. A 60-day options signal must know the earnings date.",
-            "source": "yfinance calendar, Nasdaq earnings calendar, FMP calendar.",
-            "build": "Show next earnings date, days to event, IV-crush warning, and whether the option target expiry crosses earnings.",
+            "why": "Options near earnings can explode or die from IV crush. Must know earnings date for any 15-60 day signal.",
+            "source": "yfinance calendar — next earnings date, days to event.",
+            "build": "Built: fetch_earnings_risk() returns days to earnings, risk level (IMMINENT/HIGH/MODERATE/LOW/CLEAR), IV crush flag. Shown on Page 2.",
         },
             "build": "Re-run the 15D formula historically, record forward 5/10/15D returns, hit rate, average win/loss, max drawdown, and best threshold.",
         },
@@ -10783,20 +11131,21 @@ elif page == "8️⃣ A-Level Upgrade Roadmap":
         """, unsafe_allow_html=True)
 
     st.divider()
-    st.subheader("Next Build Order — Remaining A+ Gaps")
+    st.subheader("Next Build Order — Remaining A+ Refinements")
     st.markdown("""
-    1. **Add earnings/date risk to 60D options** — removes many bad option trades quickly. IV crush is the #1 options killer.
-    2. **Add real option chain quality for top 20 only** — IV, spread, OI, volume, contract quality.
-    3. **Add news/catalyst velocity** — detect whether the move has a fresh reason or is stale.
-    4. **Calibrate confidence bands** — map score ranges to actual historical outcomes from backtest data.
-    5. **Add position sizing/invalidation** — turn signal into an executable decision with risk tiers.
+    1. **Position sizing / risk tiers** — Probe, Pilot, Normal, Avoid based on conviction + stop zone + account risk.
+    2. **Confidence band calibration** — map score ranges (60-70, 70-80, 80-90, 90+) to actual historical win rates from backtest data.
+    3. **Sector-relative mini charts** — ticker/SPY and ticker/sector ETF performance over 30/60/90D.
+    4. **Alert system** — notify when a top-ranked signal crosses ATTACK threshold or earnings is imminent.
     """)
 
     st.markdown("""
     <div class="c-card-dark t-sm" style="margin-top:12px;line-height:1.8">
         <strong class="tc-green">Status:</strong>
-        CFIS-X is now at <b>A- (87/100)</b>. The core intelligence pipeline is complete: scoring → exhaustion filter → big money detection → 15D projection → backtesting → sector rotation → institutional tracking → ML optimization.
-        The remaining 6 points to A+ are about <b>options precision</b> (real IV/OI data), <b>earnings risk</b> (date awareness), and <b>catalyst freshness</b> (news velocity).
+        CFIS-X is now at <b>A (93/100)</b>. The full intelligence pipeline is complete:
+        scoring → exhaustion filter → big money detection → aggressive 15D projection → backtesting → sector rotation →
+        institutional tracking → ML optimization → earnings risk → real options IV/OI → news velocity.
+        The remaining points to A+ are <b>position sizing</b> (executable risk rules) and <b>confidence calibration</b> (score = measured probability).
     </div>
     """, unsafe_allow_html=True)
 
