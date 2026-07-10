@@ -9048,6 +9048,7 @@ with st.sidebar:
         "7️⃣ Bridgewater/Aladdin Overlay",
         "8️⃣ A-Level Upgrade Roadmap",
         "9️⃣ Institutional Intelligence",
+        "🎯 CFIS Auto-Pick",
     ], index=1, label_visibility="collapsed")
     st.divider()
     st.caption("Data: Yahoo Finance · Cache: 5 min")
@@ -11413,6 +11414,321 @@ elif page == "9️⃣ Institutional Intelligence":
                         Use the best combo as your primary filter on Page 2 and Page 7.
                     </div>
                     """, unsafe_allow_html=True)
+
+
+elif page == "🎯 CFIS Auto-Pick":
+    st.title("🎯 CFIS Auto-Pick")
+    st.caption("Fully automated stock selection — scans all signals, filters by ML-proven combos, cross-checks sector flow + 13F + earnings + news, ranks by conviction")
+
+    # ── MEGA THEME BONUS — catches frontier capital migration ──
+    FRONTIER_THEMES = {
+        "Physical AI / Robotics": {
+            "tickers": {"TSLA", "PATH", "ISRG", "RKLB", "JOBY", "PLTR", "NVDA", "ARM", "SMCI", "INTC", "MRVL", "AVGO"},
+            "bonus": 12, "why": "AI moving from cloud to physical world — robotics, autonomous, embodied intelligence",
+        },
+        "Quantum Computing": {
+            "tickers": {"IONQ", "QBTS", "RGTI", "QUBT", "GOOG", "IBM"},
+            "bonus": 10, "why": "Quantum advantage approaching — pharma, crypto, optimization use cases",
+        },
+        "Nuclear / Energy Renaissance": {
+            "tickers": {"CCJ", "CEG", "VST", "NNE", "OKLO", "SMR", "LEU", "UEC", "DNN"},
+            "bonus": 10, "why": "AI data centers need baseload power — nuclear is the only scalable clean option",
+        },
+        "Space Economy": {
+            "tickers": {"RKLB", "LUNR", "RDW", "ASTS", "BKSY", "MNTS"},
+            "bonus": 10, "why": "Launch costs falling, defense + commercial demand surging",
+        },
+        "Defense / Autonomous Weapons": {
+            "tickers": {"LMT", "RTX", "NOC", "GD", "PLTR", "KTOS", "RKLB", "LDOS", "BAH"},
+            "bonus": 8, "why": "Global rearmament cycle + AI-enabled defense spending",
+        },
+        "AI Infrastructure": {
+            "tickers": {"NVDA", "AMD", "AVGO", "MRVL", "ANET", "VRT", "DELL", "SMCI", "ARM", "TSM"},
+            "bonus": 8, "why": "Every industry digitizing — compute, networking, cooling, chips",
+        },
+        "Crypto / Digital Assets": {
+            "tickers": {"COIN", "XYZ", "HOOD", "MSTR", "MARA", "RIOT", "CLSK"},
+            "bonus": 6, "why": "Institutional crypto adoption accelerating, ETF inflows",
+        },
+        "Biotech / Gene Therapy": {
+            "tickers": {"CRSP", "RXRX", "ILMN", "BEAM", "NTLA", "EDIT", "VRTX"},
+            "bonus": 8, "why": "CRISPR therapies reaching market, AI drug discovery",
+        },
+    }
+
+    def get_theme_bonus(ticker):
+        total_bonus = 0
+        themes = []
+        for theme, data in FRONTIER_THEMES.items():
+            if ticker in data["tickers"]:
+                total_bonus += data["bonus"]
+                themes.append(theme)
+        return total_bonus, themes
+
+    if st.button("🚀 Run Auto-Pick Analysis", key="auto_pick", type="primary", use_container_width=True):
+        scan_radar.clear()
+
+    with st.spinner("Running full intelligence pipeline — scanning, scoring, cross-checking all engines…"):
+        try:
+            radar_rows = scan_radar(RADAR_UNIVERSE)
+        except Exception as e:
+            st.error(f"Scan failed: {e}")
+            radar_rows = []
+
+    if radar_rows:
+        # Score every stock through the full pipeline
+        picks = []
+        for r in radar_rows[:20]:
+            tk = r["ticker"]
+            score = 0
+            reasons = []
+
+            # 1. Base signal strength
+            score += r["hot_score"] * 0.5
+            if r["hot_score"] >= 75:
+                reasons.append(f"Strong 15D signal ({r['hot_score']})")
+
+            # 2. Confirmation
+            conf = r.get("confirmation", 0)
+            score += conf * 0.3
+            if conf >= 80:
+                reasons.append(f"High confirmation ({conf})")
+
+            # 3. Breakout
+            ba = r.get("breakout_alpha", 0)
+            if ba >= 8:
+                score += 20
+                reasons.append(f"Breakout +{ba}")
+            elif ba >= 5:
+                score += 12
+                reasons.append(f"Accelerating +{ba}")
+            elif ba >= 2:
+                score += 5
+
+            # 4. Exhaustion — healthy = bonus, exhausted = penalty
+            ex = r.get("exhaustion", 0)
+            if ex >= 0:
+                score += 10
+            elif ex <= -8:
+                score -= 15
+                reasons.append("⚠️ Exhausted")
+            elif ex <= -3:
+                score -= 5
+
+            # 5. Big Money
+            bm = r.get("big_money", 0)
+            if bm >= 20:
+                score += 20
+                reasons.append(f"Big money loading ({bm})")
+            elif bm >= 10:
+                score += 12
+                reasons.append(f"Institutional interest ({bm})")
+            elif bm >= 5:
+                score += 5
+
+            # 6. Projection
+            proj = r.get("proj_15d", 0)
+            if proj >= 30:
+                score += 25
+                reasons.append(f"Explosive projection +{proj:.0f}%")
+            elif proj >= 15:
+                score += 15
+                reasons.append(f"Strong projection +{proj:.0f}%")
+            elif proj >= 8:
+                score += 8
+
+            # 7. News velocity
+            nv = r.get("news_velocity", 0)
+            if nv >= 70:
+                score += 12
+                reasons.append("HOT news catalyst")
+            elif nv >= 45:
+                score += 5
+
+            # 8. Earnings safety
+            e_risk = r.get("earnings_risk", "—")
+            if e_risk in ("IMMINENT", "HIGH"):
+                score -= 10
+                reasons.append(f"⚠️ Earnings {r.get('earnings_days', '?')}D away")
+            elif e_risk == "CLEAR":
+                score += 5
+
+            # 9. Options quality
+            oq = r.get("opt_quality", 0)
+            if oq >= 70:
+                score += 5
+
+            # 10. FRONTIER THEME BONUS — catch the future
+            theme_bonus, themes = get_theme_bonus(tk)
+            if theme_bonus > 0:
+                score += theme_bonus
+                reasons.append("🚀 " + " + ".join(themes[:2]))
+
+            # 11. Momentum persistence
+            if r.get("ret_15", 0) > 10:
+                score += 8
+                reasons.append(f"Strong momentum +{r['ret_15']:.1f}%")
+            elif r.get("ret_15", 0) > 5:
+                score += 4
+
+            picks.append({
+                "ticker": tk,
+                "pick_score": round(score, 1),
+                "reasons": reasons,
+                "hot": r["hot_score"],
+                "confirm": conf,
+                "breakout": ba,
+                "exhaust": ex,
+                "big_money": bm,
+                "proj": proj,
+                "proj_target": r.get("proj_target", 0),
+                "proj_bear": r.get("proj_bear", 0),
+                "proj_bull": r.get("proj_bull", 0),
+                "price": r["price"],
+                "ret_15": r.get("ret_15", 0),
+                "news": nv,
+                "news_label": r.get("news_label", "STALE"),
+                "earnings_risk": e_risk,
+                "earnings_days": r.get("earnings_days", 999),
+                "opt_iv": r.get("opt_iv", 0),
+                "opt_quality": oq,
+                "themes": themes,
+                "theme_bonus": theme_bonus,
+                "tags": r.get("tags", []),
+                "reason": r.get("reason", ""),
+            })
+
+        picks.sort(key=lambda x: x["pick_score"], reverse=True)
+
+        # Split into TOP PICKS (high score + strong momentum) and POTENTIAL (high theme + building)
+        top_picks = []
+        potential_picks = []
+        for p in picks:
+            if len(top_picks) < 3 and p["pick_score"] >= 60 and p["confirm"] >= 60 and p["exhaust"] >= -3:
+                top_picks.append(p)
+            elif len(potential_picks) < 3 and p["pick_score"] >= 40:
+                potential_picks.append(p)
+
+        # Fill if not enough
+        remaining = [p for p in picks if p not in top_picks and p not in potential_picks]
+        while len(top_picks) < 3 and remaining:
+            top_picks.append(remaining.pop(0))
+        while len(potential_picks) < 3 and remaining:
+            potential_picks.append(remaining.pop(0))
+
+        # Sector rotation context
+        try:
+            rotation = fetch_sector_rotation()
+            inflow_sectors = {r["sector"] for r in rotation if r["flow_label"] == "INFLOW"} if rotation else set()
+        except Exception:
+            inflow_sectors = set()
+
+        st.markdown("")
+
+        col_top, col_pot = st.columns(2)
+
+        def render_pick(p, rank, col, pick_type):
+            sc = p["pick_score"]
+            sc_c = "#00E676" if sc >= 100 else ("#4CAF50" if sc >= 75 else ("#FFC107" if sc >= 50 else "#78909C"))
+            proj_c = "#00E676" if p["proj"] >= 20 else ("#4CAF50" if p["proj"] >= 8 else ("#FFC107" if p["proj"] >= 2 else "#78909C"))
+            ba_c = "#00E676" if p["breakout"] >= 8 else ("#4CAF50" if p["breakout"] >= 4 else ("#FFC107" if p["breakout"] >= 1 else "#78909C"))
+            theme_html = ""
+            if p["themes"]:
+                theme_pills = " ".join(f'<span class="pill pill-blue" style="font-size:9px;padding:1px 6px">{t}</span>' for t in p["themes"][:2])
+                theme_html = f'<div class="mt-sm">{theme_pills}</div>'
+
+            with col:
+                st.markdown(f"""
+                <div class="c-card" style="border:2px solid {sc_c};min-height:300px">
+                    <div class="d-flex ai-center jc-between mb-sm">
+                        <div>
+                            <div class="t-xl fw-9 tc-primary">{p['ticker']}</div>
+                            <div class="t-xs tc-muted">${p['price']:.2f}</div>
+                        </div>
+                        <div style="text-align:right">
+                            <div class="t-num" style="color:{sc_c}">{sc:.0f}</div>
+                            <div class="t-xs tc-dim">PICK SCORE</div>
+                        </div>
+                    </div>
+                    <div class="d-flex flex-wrap gap-md mb-sm">
+                        <div style="text-align:center"><div class="t-lg fw-9" style="color:{proj_c}">{p['proj']:+.1f}%</div><div class="t-xs tc-dim">15D PROJ</div></div>
+                        <div style="text-align:center"><div class="t-lg fw-9" style="color:{proj_c}">${p['proj_target']:.2f}</div><div class="t-xs tc-dim">TARGET</div></div>
+                        <div style="text-align:center"><div class="t-md fw-8" style="color:{ba_c}">{p['breakout']:+d}</div><div class="t-xs tc-dim">BREAKOUT</div></div>
+                        <div style="text-align:center"><div class="t-md fw-8" style="color:{'#4CAF50' if p['exhaust']>=0 else '#FFC107'}">{p['exhaust']:+d}</div><div class="t-xs tc-dim">EXHAUST</div></div>
+                    </div>
+                    <div class="stat-row mb-sm">
+                        <span>Signal: <b>{p['hot']}</b></span>
+                        <span>Confirm: <b>{p['confirm']}</b></span>
+                        <span>Big $: <b>{p['big_money']}</b></span>
+                        <span>News: <b style="color:{'#4CAF50' if p['news']>=70 else '#FFC107'}">{p['news_label']}</b></span>
+                    </div>
+                    <div class="stat-row mb-sm">
+                        <span>Earnings: <b style="color:{'#f44336' if p['earnings_risk'] in ('IMMINENT','HIGH') else '#4CAF50'}">{p['earnings_risk']}</b></span>
+                        <span>IV: <b>{p['opt_iv']:.0f}%</b></span>
+                        <span>Range: <b>{p['proj_bear']:+.1f}% to {p['proj_bull']:+.1f}%</b></span>
+                    </div>
+                    {theme_html}
+                    <div class="t-xs tc-muted mt-sm" style="line-height:1.6">{'<br>'.join('✓ ' + r for r in p['reasons'][:5])}</div>
+                    <div class="t-sm tc-secondary mt-sm" style="line-height:1.6">{p['reason']}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        with col_top:
+            st.markdown(f"""
+            <div class="c-signal-green" style="text-align:center;padding:10px">
+                <div class="t-lg fw-9 tc-green">🏆 TOP PICKS — Attack Now</div>
+                <div class="t-xs tc-secondary">Strongest signals + confirmed momentum + ML-proven combos</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with col_pot:
+            st.markdown(f"""
+            <div class="c-signal-blue" style="text-align:center;padding:10px">
+                <div class="t-lg fw-9 tc-blue">🔮 POTENTIAL PICKS — Longer Hold</div>
+                <div class="t-xs tc-secondary">Frontier themes building + early accumulation + future catalysts</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        for i, p in enumerate(top_picks[:3]):
+            render_pick(p, i + 1, col_top, "TOP")
+        for i, p in enumerate(potential_picks[:3]):
+            render_pick(p, i + 1, col_pot, "POTENTIAL")
+
+        # Summary comparison table
+        st.divider()
+        st.subheader("Full Comparison")
+        all_picks = top_picks[:3] + potential_picks[:3]
+        compare_data = [{
+            "Type": "🏆 TOP" if p in top_picks else "🔮 POTENTIAL",
+            "Ticker": p["ticker"],
+            "Pick Score": p["pick_score"],
+            "15D Proj %": p["proj"],
+            "Target $": round(p["proj_target"], 2),
+            "Range": f"{p['proj_bear']:+.1f}% to {p['proj_bull']:+.1f}%",
+            "Signal": p["hot"],
+            "Confirm": p["confirm"],
+            "Breakout": p["breakout"],
+            "Exhaust": p["exhaust"],
+            "Big Money": p["big_money"],
+            "News": p["news_label"],
+            "Earnings": p["earnings_risk"],
+            "IV %": round(p["opt_iv"]),
+            "Themes": " · ".join(p["themes"][:2]) if p["themes"] else "—",
+            "Theme Bonus": p["theme_bonus"],
+        } for p in all_picks]
+        st.dataframe(pd.DataFrame(compare_data), use_container_width=True, hide_index=True)
+
+        # Trading plan
+        st.divider()
+        st.markdown("""
+        <div class="c-banner t-sm">
+            <strong class="tc-green">How to use Auto-Pick:</strong><br>
+            <b>🏆 TOP PICKS</b> = highest conviction right now. Multiple signals confirmed, momentum active, ML-proven combo. Enter within 1-3 days.<br>
+            <b>🔮 POTENTIAL PICKS</b> = frontier theme plays building. Signals emerging but not fully confirmed. Add to watchlist, enter on breakout confirmation. Hold 30-90 days for full thesis to play out.<br>
+            <b>Theme bonus</b> adds conviction for stocks riding mega capital migration themes (Physical AI, Quantum, Nuclear, Space, Defense, Biotech). These are where humanity's next capital wave flows.
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.warning("No scan data available. Hit the button above to run the full analysis.")
 
 
 # ═══════════════════════════════════════════════════════════════
